@@ -26,6 +26,9 @@ const folderInput    = $('folder-input');
 const btnBrowse      = $('btn-browse');
 const btnOpen        = $('btn-open');
 const historySelect  = $('history-select');
+const btnFontDown    = $('btn-font-down');
+const btnFontUp      = $('btn-font-up');
+const fontSizeLabel  = $('font-size-label');
 const btnRefresh     = $('btn-refresh');
 const btnTheme       = $('btn-theme');
 const warningBar     = $('warning-bar');
@@ -70,6 +73,7 @@ async function init() {
     const config = await get('/api/config');
     state.theme = config.theme ?? 'light';
     applyTheme(state.theme);
+    initFontSize();
     populateHistory(config.history ?? []);
 
     if (config.currentRoot) {
@@ -82,6 +86,21 @@ async function init() {
   }
 
   bindEvents();
+}
+
+// ---- Font size -----------------------------------------------------------
+const FONT_MIN = 12, FONT_MAX = 24, FONT_DEFAULT = 16, FONT_STEP = 1;
+
+function applyFontSize(size) {
+  document.documentElement.style.setProperty('--preview-font-size', `${size}px`);
+  fontSizeLabel.textContent = `${size}px`;
+  fontSizeLabel.style.fontWeight = size === FONT_DEFAULT ? '' : 'bold';
+  localStorage.setItem('previewFontSize', size);
+}
+
+function initFontSize() {
+  const saved = parseInt(localStorage.getItem('previewFontSize'), 10);
+  applyFontSize(saved >= FONT_MIN && saved <= FONT_MAX ? saved : FONT_DEFAULT);
 }
 
 // ---- Theme ---------------------------------------------------------------
@@ -115,26 +134,56 @@ async function openFolder(rawPath) {
   if (!path) return;
   showWarning('', '');
   try {
+    // Save current tab state before switching folder
+    if (state.currentRoot) saveTabState(state.currentRoot);
+
     const res = await post('/api/folder', { path });
     state.currentRoot = res.path;
     state.tags = {};
-    // Close all tabs when changing folder
-    state.tabs = [];
-    state.activeTabPath = null;
     state.tabDirty = {};
     state.tabEditorText = {};
     state.isEditing = false;
     folderInput.value = res.path;
     populateHistory(res.config.history ?? []);
+
+    // Restore saved tab state for this folder
+    const saved = loadTabState(res.path);
+    state.tabs = saved?.tabs ?? [];
+    state.activeTabPath = saved?.activeTabPath ?? null;
     renderTabBar();
 
     if (res.warnings?.length) showWarning(res.warnings.join('<br>'), 'warn');
 
     await refreshTree();
-    showEmptyState();
+
+    if (state.activeTabPath) {
+      const tab = activeTab();
+      if (tab) await renderFileContent(tab);
+      else showEmptyState();
+    } else {
+      showEmptyState();
+    }
   } catch (err) {
     showWarning(`エラー: ${err.message}`, 'error');
   }
+}
+
+// ---- Tab state persistence -----------------------------------------------
+
+function saveTabState(folderPath) {
+  if (!folderPath) return;
+  const data = {
+    tabs: state.tabs.map(({ path, relativePath, name }) => ({ path, relativePath, name })),
+    activeTabPath: state.activeTabPath,
+  };
+  try { localStorage.setItem('tabState:' + folderPath, JSON.stringify(data)); } catch { /* quota */ }
+}
+
+function loadTabState(folderPath) {
+  try {
+    const raw = localStorage.getItem('tabState:' + folderPath);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
 }
 
 function populateHistory(history) {
@@ -313,6 +362,14 @@ function renderTabBar() {
     tabBar.appendChild(el);
   });
 
+  // Close-all button (pinned to right)
+  const closeAll = document.createElement('button');
+  closeAll.className = 'tab-close-all';
+  closeAll.textContent = '全て閉じる';
+  closeAll.title = '全タブを閉じる';
+  closeAll.addEventListener('click', closeAllTabs);
+  tabBar.appendChild(closeAll);
+
   // Scroll active tab into view
   const activeEl = tabBar.querySelector('.tab-item.active');
   activeEl?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -365,6 +422,19 @@ async function closeTab(path) {
   } else {
     showEmptyState();
   }
+}
+
+function closeAllTabs() {
+  const hasDirty = state.tabs.some((t) => state.tabDirty[t.path]);
+  if (hasDirty && !confirm('未保存の変更があるタブがあります。全て閉じますか？')) return;
+  state.tabs = [];
+  state.activeTabPath = null;
+  state.tabDirty = {};
+  state.tabEditorText = {};
+  state.isEditing = false;
+  renderTabBar();
+  updateTreeActiveState();
+  showEmptyState();
 }
 
 // ---- Open file -----------------------------------------------------------
@@ -814,6 +884,16 @@ function bindEvents() {
   });
 
   btnTheme.addEventListener('click', () => applyTheme(state.theme === 'light' ? 'dark' : 'light'));
+
+  btnFontDown.addEventListener('click', () => {
+    const cur = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--preview-font-size'), 10) || FONT_DEFAULT;
+    applyFontSize(Math.max(cur - FONT_STEP, FONT_MIN));
+  });
+  btnFontUp.addEventListener('click', () => {
+    const cur = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--preview-font-size'), 10) || FONT_DEFAULT;
+    applyFontSize(Math.min(cur + FONT_STEP, FONT_MAX));
+  });
+  fontSizeLabel.addEventListener('click', () => applyFontSize(FONT_DEFAULT));
 
   btnFlag.addEventListener('click',    toggleFlag);
   btnEdit.addEventListener('click',    enterEditMode);
