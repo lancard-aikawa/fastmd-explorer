@@ -750,6 +750,75 @@ function bindEvents() {
   document.addEventListener('keydown', handleKey);
 
   initResize();
+  initDragDrop();
+}
+
+// ---- Drag & drop ---------------------------------------------------------
+
+/** Convert a file:// URI to a native filesystem path */
+function fileUriToPath(uri) {
+  // file:///C:/foo  → C:/foo  (Windows)
+  // file:///home/foo → /home/foo (Unix / macOS)
+  const withoutScheme = uri.replace(/^file:\/\//, ''); // → /C:/foo  or  /home/foo
+  const decoded = decodeURIComponent(withoutScheme);
+  // Windows drive letter: /C:/ pattern
+  return /^\/[A-Za-z]:[\\/]/.test(decoded) ? decoded.slice(1) : decoded;
+}
+
+function initDragDrop() {
+  const overlay = $('drop-overlay');
+  let dragDepth = 0; // track enter/leave across child elements
+
+  function hasFiles(dt) {
+    return dt && (dt.types.includes('Files') || dt.types.includes('text/uri-list'));
+  }
+
+  document.addEventListener('dragenter', (e) => {
+    if (!hasFiles(e.dataTransfer)) return;
+    dragDepth++;
+    overlay.classList.remove('hidden');
+    e.preventDefault();
+  });
+
+  document.addEventListener('dragover', (e) => {
+    if (!hasFiles(e.dataTransfer)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'link';
+  });
+
+  document.addEventListener('dragleave', () => {
+    dragDepth--;
+    if (dragDepth <= 0) { dragDepth = 0; overlay.classList.add('hidden'); }
+  });
+
+  document.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    dragDepth = 0;
+    overlay.classList.add('hidden');
+
+    let path = null;
+
+    // 1. Try file URI list (most reliable — works when dragging from Explorer/Finder/Nautilus)
+    const uriList = e.dataTransfer.getData('text/uri-list');
+    if (uriList) {
+      const first = uriList.split(/\r?\n/).find((l) => l.startsWith('file://'));
+      if (first) path = fileUriToPath(first.trim());
+    }
+
+    // 2. Fallback: plain text (user dragging a path string)
+    if (!path) {
+      const text = (e.dataTransfer.getData('text/plain') ?? '').trim();
+      if (text && !text.includes('\n')) path = text;
+    }
+
+    if (!path) {
+      showWarning('フォルダのパスを取得できませんでした。パス入力欄に直接入力してください。', 'warn');
+      return;
+    }
+
+    folderInput.value = path;
+    await openFolder(path);
+  });
 }
 
 // ---- Bootstrap -----------------------------------------------------------
