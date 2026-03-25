@@ -10,6 +10,8 @@ const state = {
   theme:          'light',
   searchQuery:    '',
   expandedDirs:   new Set(),
+  filterTags:     new Set(),  // active tag filters
+  filterFlagged:  false,
 
   // Tabs
   tabs:           [],    // [{ path, relativePath, name }]
@@ -31,6 +33,7 @@ const btnFontUp      = $('btn-font-up');
 const fontSizeLabel  = $('font-size-label');
 const btnRefresh     = $('btn-refresh');
 const btnTheme       = $('btn-theme');
+const tagFilterBar   = $('tag-filter-bar');
 const warningBar     = $('warning-bar');
 const fileTree       = $('file-tree');
 const sidebarFooter  = $('sidebar-footer');
@@ -217,6 +220,7 @@ async function refreshTree() {
     }
 
     renderTreeNode(data.tree, fileTree, false);
+    renderTagFilterBar();
     const count = countFiles(data.tree);
     sidebarFooter.textContent = `${count} ファイル`;
   } catch (err) {
@@ -698,20 +702,30 @@ function makeTagChip(tag) {
   const span = document.createElement('span');
   span.className = 'tag-chip';
   span.style.setProperty('--tag-hue', tagHue(tag));
-  span.textContent = tag;
+  span.title = 'クリックで編集';
+
+  const label = document.createElement('span');
+  label.className = 'tag-label';
+  label.textContent = tag;
+  label.addEventListener('click', async () => {
+    await removeTag(tag);
+    tagInput.value = tag;
+    tagInput.focus();
+  });
 
   const del = document.createElement('button');
   del.className = 'tag-del';
   del.textContent = '×';
   del.title = 'タグを削除';
   del.addEventListener('click', () => removeTag(tag));
-  span.appendChild(del);
 
+  span.appendChild(label);
+  span.appendChild(del);
   return span;
 }
 
 async function addTag(tag) {
-  tag = tag.trim().toLowerCase().replace(/\s+/g, '-');
+  tag = tag.trim().replace(/\s+/g, '-');
   if (!tag || !state.activeTabPath) return;
   const meta = currentMeta();
   if ((meta.tags ?? []).includes(tag)) return;
@@ -747,6 +761,7 @@ async function saveTagMeta(patch) {
     updateFileHeader(tab);
     updateTagsBar(tab);
     refreshTreeItem(tab);
+    renderTagFilterBar();
   } catch (err) {
     showWarning(`タグ保存エラー: ${err.message}`, 'error');
   }
@@ -763,12 +778,98 @@ function refreshTreeItem(tab) {
   (meta.tags ?? []).forEach((tag) => right.appendChild(miniChip(tag)));
 }
 
+// ---- Tag filter bar ------------------------------------------------------
+
+function renderTagFilterBar() {
+  // Collect all unique tags across all files
+  const allTags = new Set();
+  Object.values(state.tags).forEach(({ tags }) => (tags ?? []).forEach((t) => allTags.add(t)));
+
+  const hasFlagged = Object.values(state.tags).some(({ flagged }) => flagged);
+
+  if (allTags.size === 0 && !hasFlagged) {
+    tagFilterBar.classList.add('hidden');
+    tagFilterBar.innerHTML = '';
+    return;
+  }
+
+  tagFilterBar.classList.remove('hidden');
+  tagFilterBar.innerHTML = '';
+
+  const activeCount = state.filterTags.size + (state.filterFlagged ? 1 : 0);
+  const collapsed = localStorage.getItem('tagFilterCollapsed') === '1';
+
+  // Toggle header
+  const header = document.createElement('div');
+  header.className = 'tf-header';
+  const arrow = collapsed ? '▸' : '▾';
+  header.innerHTML = `<span class="tf-title">タグ ${arrow}</span>${activeCount > 0 ? `<span class="tf-badge">${activeCount}</span>` : ''}`;
+  header.addEventListener('click', () => {
+    const next = localStorage.getItem('tagFilterCollapsed') === '1' ? '0' : '1';
+    localStorage.setItem('tagFilterCollapsed', next);
+    renderTagFilterBar();
+  });
+  tagFilterBar.appendChild(header);
+
+  if (collapsed) return;
+
+  // Chips area
+  const chips = document.createElement('div');
+  chips.className = 'tf-chips';
+
+  // Flagged filter button
+  if (hasFlagged) {
+    const btn = document.createElement('button');
+    btn.className = 'tf-chip tf-flag' + (state.filterFlagged ? ' tf-active' : '');
+    btn.textContent = '★';
+    btn.title = 'フラグ付きのみ表示';
+    btn.addEventListener('click', () => {
+      state.filterFlagged = !state.filterFlagged;
+      applySearch(state.searchQuery);
+      renderTagFilterBar();
+    });
+    chips.appendChild(btn);
+  }
+
+  // Tag chips
+  [...allTags].sort().forEach((tag) => {
+    const btn = document.createElement('button');
+    btn.className = 'tf-chip' + (state.filterTags.has(tag) ? ' tf-active' : '');
+    btn.style.setProperty('--tag-hue', tagHue(tag));
+    btn.textContent = tag;
+    btn.addEventListener('click', () => {
+      if (state.filterTags.has(tag)) state.filterTags.delete(tag);
+      else state.filterTags.add(tag);
+      applySearch(state.searchQuery);
+      renderTagFilterBar();
+    });
+    chips.appendChild(btn);
+  });
+
+  // Clear button
+  if (activeCount > 0) {
+    const clear = document.createElement('button');
+    clear.className = 'tf-clear';
+    clear.textContent = '✕ クリア';
+    clear.addEventListener('click', () => {
+      state.filterTags.clear();
+      state.filterFlagged = false;
+      applySearch(state.searchQuery);
+      renderTagFilterBar();
+    });
+    chips.appendChild(clear);
+  }
+
+  tagFilterBar.appendChild(chips);
+}
+
 // ---- Search filter -------------------------------------------------------
 function applySearch(query) {
   state.searchQuery = query.toLowerCase();
+  const isFiltering = !!state.searchQuery || state.filterTags.size > 0 || state.filterFlagged;
 
   // Force-render all unrendered dirs so deep files are searchable
-  if (state.searchQuery) {
+  if (isFiltering) {
     let rendered;
     do {
       rendered = 0;
@@ -787,7 +888,14 @@ function applySearch(query) {
   items.forEach((el) => {
     const name = (el.querySelector('.file-name')?.textContent ?? '').toLowerCase();
     const rel  = (el.dataset.rel ?? '').toLowerCase();
-    const match = !state.searchQuery || name.includes(state.searchQuery) || rel.includes(state.searchQuery);
+    const meta = state.tags[el.dataset.rel] ?? {};
+
+    const matchSearch  = !state.searchQuery || name.includes(state.searchQuery) || rel.includes(state.searchQuery);
+    const matchFlagged = !state.filterFlagged || !!meta.flagged;
+    const matchTags    = state.filterTags.size === 0 ||
+      [...state.filterTags].every((t) => (meta.tags ?? []).includes(t));
+
+    const match = matchSearch && matchFlagged && matchTags;
     el.style.display = match ? '' : 'none';
     if (match) visible++;
   });
@@ -795,7 +903,7 @@ function applySearch(query) {
   // Show/hide dirs based on matching files; restore collapsed state when cleared
   fileTree.querySelectorAll('.tree-children').forEach((ul) => {
     const dirRow = ul.previousElementSibling;
-    if (state.searchQuery) {
+    if (isFiltering) {
       const hasVisible = [...ul.querySelectorAll('.tree-file')].some((el) => el.style.display !== 'none');
       ul.style.display = hasVisible ? '' : 'none';
       if (dirRow?.classList.contains('tree-dir')) dirRow.style.display = hasVisible ? '' : 'none';
@@ -808,7 +916,7 @@ function applySearch(query) {
   });
 
   const total = items.length;
-  sidebarFooter.textContent = state.searchQuery ? `${visible} / ${total} ファイル` : `${total} ファイル`;
+  sidebarFooter.textContent = isFiltering ? `${visible} / ${total} ファイル` : `${total} ファイル`;
 }
 
 // ---- UI helpers ----------------------------------------------------------

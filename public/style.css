@@ -267,6 +267,79 @@ select { cursor: pointer; }
   flex-shrink: 0;
 }
 
+/* Tag filter bar */
+#tag-filter-bar {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#tag-filter-bar.hidden { display: none; }
+
+.tf-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.tf-header:hover { background: rgba(128,128,128,0.08); }
+.tf-title { font-size: 0.72em; color: var(--text-dim); font-weight: 500; }
+.tf-badge {
+  font-size: 0.65em;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 10px;
+  padding: 1px 6px;
+  font-weight: 600;
+}
+
+.tf-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 8px 6px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.tf-chip {
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 0.72em;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-dim);
+  transition: all 0.15s;
+}
+.tf-chip:hover { color: var(--text); border-color: var(--accent); }
+.tf-chip.tf-active {
+  background: hsl(var(--tag-hue, 200) 55% 88%);
+  color: hsl(var(--tag-hue, 200) 60% 25%);
+  border-color: hsl(var(--tag-hue, 200) 50% 65%);
+}
+[data-theme="dark"] .tf-chip.tf-active {
+  background: hsl(var(--tag-hue, 200) 40% 28%);
+  color: hsl(var(--tag-hue, 200) 70% 80%);
+  border-color: hsl(var(--tag-hue, 200) 50% 45%);
+}
+.tf-flag { --tag-hue: 45; }
+.tf-flag.tf-active { background: #3a2e00; color: #ffd700; border-color: #806000; }
+[data-theme="dark"] .tf-flag.tf-active { background: #2a2000; color: #ffd700; border-color: #806000; }
+.tf-clear {
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 0.72em;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+}
+.tf-clear:hover { color: var(--text); background: rgba(128,128,128,0.12); }
+
 #search-input { width: 100%; font-size: 0.75em; }
 
 #file-tree-wrap {
@@ -482,6 +555,9 @@ select { cursor: pointer; }
   border: 1px solid var(--tag-border);
   white-space: nowrap;
 }
+
+.tag-label { cursor: pointer; }
+.tag-label:hover { text-decoration: underline; }
 
 .tag-del {
   font-size: 0.7em;
