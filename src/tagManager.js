@@ -25,11 +25,24 @@ export async function saveTags(rootPath, tags) {
 
 export async function renameFileTags(rootPath, oldRelative, newRelative) {
   const tags = await loadTags(rootPath);
-  if (tags[oldRelative]) {
-    tags[newRelative] = tags[oldRelative];
-    delete tags[oldRelative];
-    await saveTags(rootPath, tags);
+  // normOld.length === oldRelative.length なのでスライス位置は共通
+  const normOld = oldRelative.replace(/\\/g, '/');
+  let changed = false;
+  for (const key of Object.keys(tags)) {
+    const normKey = key.replace(/\\/g, '/');
+    if (normKey === normOld) {
+      tags[newRelative] = tags[key];
+      if (key !== newRelative) delete tags[key];
+      changed = true;
+    } else if (normKey.startsWith(normOld + '/')) {
+      // key の区切り文字をそのまま保持してプレフィックスだけ置換
+      const newKey = newRelative + key.slice(oldRelative.length);
+      tags[newKey] = tags[key];
+      if (key !== newKey) delete tags[key];
+      changed = true;
+    }
   }
+  if (changed) await saveTags(rootPath, tags);
 }
 
 export async function updateFileTags(rootPath, relativePath, patch) {

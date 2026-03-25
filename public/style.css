@@ -653,6 +653,9 @@ select { cursor: pointer; }
 .dir-name { font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dir-name::before { content: '📁'; margin-right: 4px; font-style: normal; }
 
+.tree-root-row { font-weight: 600; color: var(--accent); border-bottom: 1px solid var(--border); margin-bottom: 4px; border-radius: 4px 4px 0 0; }
+.tree-root-row .dir-name::before { content: ''; }
+
 .tree-file {
   display: flex;
   align-items: center;
@@ -851,16 +854,38 @@ select { cursor: pointer; }
 .ctx-danger:hover { background: rgba(217,83,79,0.1); }
 
 /* ---- Inline input (rename / new item) ---------------------------------- */
+.inline-input-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
 .inline-input {
   font-size: 0.9em;
   padding: 1px 5px;
   border: 1px solid var(--accent);
-  border-radius: 3px;
+  border-radius: 3px 0 0 3px;
   background: var(--bg);
   color: var(--text);
   outline: none;
-  width: 140px;
-  max-width: 90%;
+  width: 120px;
+}
+.inline-input-ext {
+  font-size: 0.9em;
+  padding: 1px 5px;
+  border: 1px solid var(--accent);
+  border-left: none;
+  border-radius: 0 3px 3px 0;
+  background: var(--bg-sidebar);
+  color: var(--text-dim);
+  user-select: none;
+}
+
+.inline-input-hint {
+  display: block;
+  font-size: 0.75em;
+  color: var(--text-dim);
+  padding: 1px 4px;
+  opacity: 0.8;
 }
 
 /* ---- Drag & drop overlay ----------------------------------------------- */

@@ -239,6 +239,23 @@ function renderTreeNode(node, container, isRoot = false) {
   container.innerHTML = '';
   if (node.type === 'file') { container.appendChild(makeFileEl(node)); return; }
 
+  // Root folder row
+  if (state.currentRoot) {
+    const rootName = state.currentRoot.replace(/[/\\]+$/, '').split(/[/\\]/).pop();
+    const rootRow = document.createElement('div');
+    rootRow.className = 'tree-dir tree-root-row';
+    rootRow.innerHTML = `<span class="dir-arrow">📂</span><span class="dir-name">${escHtml(rootName)}</span>`;
+    rootRow.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      showContextMenu(e, [
+        { label: '新規ファイル', action: () => fsCreateFile(state.currentRoot) },
+        { label: '新規フォルダ', action: () => fsCreateFolder(state.currentRoot) },
+      ]);
+    });
+    container.appendChild(rootRow);
+  }
+
   const ul = document.createElement('ul');
   ul.className = 'tree-list';
   renderChildren(node.children ?? [], ul, isRoot);
@@ -946,15 +963,36 @@ function toRelative(absPath) {
 }
 
 function showNewItemInput(parentUl, placeholder) {
+  const isFile = placeholder.includes('.md');
   return new Promise((resolve) => {
     const li = document.createElement('li');
+    const wrap = document.createElement('span');
+    wrap.className = 'inline-input-wrap';
     const input = document.createElement('input');
     input.type = 'text';
     input.className = 'inline-input';
-    input.placeholder = placeholder;
-    li.appendChild(input);
+    input.placeholder = isFile ? 'ファイル名' : placeholder;
+    wrap.appendChild(input);
+    if (isFile) {
+      const ext = document.createElement('span');
+      ext.className = 'inline-input-ext';
+      ext.textContent = '.md';
+      wrap.appendChild(ext);
+    }
+    li.appendChild(wrap);
+    if (!isFile) {
+      const hint = document.createElement('span');
+      hint.className = 'inline-input-hint';
+      hint.textContent = '(同名の .md ファイルが自動作成されます)';
+      input.addEventListener('input', () => {
+        hint.textContent = input.value.trim()
+          ? `(${input.value.trim()}.md が自動作成されます)`
+          : '(同名の .md ファイルが自動作成されます)';
+      });
+      li.appendChild(hint);
+    }
     parentUl.prepend(li);
-    input.focus();
+    setTimeout(() => input.focus(), 0);
     let settled = false;
     function finish(value) {
       if (settled) return; settled = true;
@@ -971,22 +1009,42 @@ function showNewItemInput(parentUl, placeholder) {
 }
 
 function startInlineRename(nameEl, oldName, isFile) {
+  const dotIdx = oldName.lastIndexOf('.');
+  const baseName = isFile && dotIdx > 0 ? oldName.slice(0, dotIdx) : oldName;
+  const ext = isFile && dotIdx > 0 ? oldName.slice(dotIdx) : '';
   return new Promise((resolve) => {
+    // タグ・フラグを一時非表示、file-name のクリップも解除
+    const metaEl = nameEl.closest('.tree-file')?.querySelector('.file-meta');
+    if (metaEl) metaEl.style.visibility = 'hidden';
+    nameEl.style.overflow = 'visible';
+    nameEl.style.whiteSpace = 'normal';
+
     nameEl.textContent = '';
+    const wrap = document.createElement('span');
+    wrap.className = 'inline-input-wrap';
     const input = document.createElement('input');
     input.type = 'text';
-    input.value = oldName;
+    input.value = baseName;
     input.className = 'inline-input';
-    nameEl.appendChild(input);
-    input.focus();
-    const dotIdx = oldName.lastIndexOf('.');
-    input.setSelectionRange(0, isFile && dotIdx > 0 ? dotIdx : oldName.length);
+    wrap.appendChild(input);
+    if (ext) {
+      const extSpan = document.createElement('span');
+      extSpan.className = 'inline-input-ext';
+      extSpan.textContent = ext;
+      wrap.appendChild(extSpan);
+    }
+    nameEl.appendChild(wrap);
+    setTimeout(() => { input.focus(); input.setSelectionRange(0, baseName.length); }, 0);
     let settled = false;
     function finish(confirmed) {
       if (settled) return; settled = true;
-      input.remove();
+      if (metaEl) metaEl.style.visibility = '';
+      nameEl.style.overflow = '';
+      nameEl.style.whiteSpace = '';
+      wrap.remove();
       nameEl.textContent = oldName;
-      resolve(confirmed ? input.value.trim() : null);
+      const newBase = input.value.trim();
+      resolve(confirmed && newBase ? newBase + ext : null);
     }
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter')  { e.preventDefault(); finish(true); }
@@ -1024,8 +1082,16 @@ async function fsCreateFolder(dirPath) {
   const name = await showNewItemInput(targetUl, 'フォルダ名');
   if (!name) return;
   try {
-    await post('/api/fs/folder', { dir: dirPath, name });
+    const { path: newFolderPath } = await post('/api/fs/folder', { dir: dirPath, name });
+    // フォルダを表示するため同名の空 .md ファイルを自動作成
+    const res = await post('/api/fs/file', { dir: newFolderPath, name });
+    const relPath = toRelative(res.path);
+    const defaultTags = [...state.filterTags, '新規'];
+    if (defaultTags.length) {
+      await put('/api/tags', { relativePath: relPath, tags: defaultTags, flagged: false, note: '' });
+    }
     await refreshTree();
+    openFile({ path: res.path, relativePath: relPath, name: name + '.md' });
   } catch (err) { showWarning(`フォルダ作成エラー: ${err.message}`, 'error'); }
 }
 
@@ -1034,15 +1100,21 @@ async function fsRename(oldPath, isFile, nameEl) {
   const newName = await startInlineRename(nameEl, oldName, isFile);
   if (!newName || newName === oldName) return;
   const dir = oldPath.slice(0, oldPath.length - oldName.length);
-  const newPath = dir + (isFile && !newName.includes('.') ? newName + '.md' : newName);
+  const newPath = dir + newName;
   try {
     await patch('/api/fs/rename', { oldPath, newPath });
-    // state.tags のキーを旧相対パス→新相対パスに移動
-    const oldRel = toRelative(oldPath);
-    const newRel = toRelative(newPath);
-    if (state.tags[oldRel]) {
-      state.tags[newRel] = state.tags[oldRel];
-      delete state.tags[oldRel];
+    // state.tags のキーを旧相対パス→新相対パスに移動（フォルダ配下も含む）
+    const oldRel = toRelative(oldPath).replace(/\\/g, '/');
+    const newRel = toRelative(newPath).replace(/\\/g, '/');
+    for (const key of Object.keys(state.tags)) {
+      const normKey = key.replace(/\\/g, '/');
+      if (normKey === oldRel) {
+        state.tags[newRel] = state.tags[key];
+        delete state.tags[key];
+      } else if (normKey.startsWith(oldRel + '/')) {
+        state.tags[newRel + normKey.slice(oldRel.length)] = state.tags[key];
+        delete state.tags[key];
+      }
     }
     state.tabs.forEach((t) => {
       if (t.path === oldPath || t.path.startsWith(oldPath + '\\') || t.path.startsWith(oldPath + '/')) {
