@@ -32,14 +32,14 @@ marked.use(
   })
 );
 
+// markedHighlight が旧形式 (code, lang) でレンダラーを呼ぶため位置引数で受け取る
 marked.use({
   renderer: {
-    code({ text, lang }) {
+    code(code, lang) {
       if (lang === 'mermaid') {
-        // mermaid.js は element.innerHTML を読むためエスケープ不可
-        return `<div class="mermaid">${text}</div>\n`;
+        return `<div class="mermaid">${code}</div>\n`;
       }
-      return false; // fall through to markedHighlight renderer
+      return false;
     },
   },
 });

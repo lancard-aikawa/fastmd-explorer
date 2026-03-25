@@ -651,6 +651,7 @@ select { cursor: pointer; }
 
 /* Mermaid diagrams */
 .mermaid {
+  position: relative;
   display: flex;
   justify-content: center;
   margin: 1em 0;
@@ -658,9 +659,34 @@ select { cursor: pointer; }
   background: var(--bg-code);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  overflow-x: auto;
+  min-height: 80px;
+  overflow-x: auto; /* overridden to hidden by zoom init */
 }
 .mermaid svg { max-width: 100%; height: auto; }
+
+/* Mermaid zoom controls */
+.mermaid-controls {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 10;
+}
+.mermaid:hover .mermaid-controls { opacity: 1; }
+.mz-btn {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  cursor: pointer;
+  color: var(--fg);
+}
+.mz-btn:hover { background: var(--bg-sidebar); }
 
 /* ---- Drag & drop overlay ----------------------------------------------- */
 #drop-overlay {

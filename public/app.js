@@ -1,7 +1,7 @@
 // MdExplorer — vanilla JS, no build step
 
 // ---- Mermaid init --------------------------------------------------------
-mermaid.initialize({ startOnLoad: false, theme: 'default' });
+mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose' });
 
 // ---- State ---------------------------------------------------------------
 const state = {
@@ -89,7 +89,7 @@ function applyTheme(theme) {
   state.theme = theme;
   document.documentElement.setAttribute('data-theme', theme);
   hljsTheme.href = theme === 'dark' ? '/vendor/hljs-dark.css' : '/vendor/hljs-light.css';
-  mermaid.initialize({ startOnLoad: false, theme: theme === 'dark' ? 'dark' : 'default' });
+  mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: theme === 'dark' ? 'dark' : 'default' });
 }
 
 // ---- Folder selection ----------------------------------------------------
@@ -414,10 +414,97 @@ async function renderFileContent(tab) {
 }
 
 async function renderMermaid() {
-  const nodes = previewContent.querySelectorAll('.mermaid');
+  const nodes = Array.from(previewContent.querySelectorAll('.mermaid'));
   if (!nodes.length) return;
-  nodes.forEach((el) => el.removeAttribute('data-processed'));
-  try { await mermaid.run({ nodes }); } catch (e) { console.warn('Mermaid:', e); }
+  nodes.forEach((el) => {
+    el.removeAttribute('data-processed');
+    el.removeAttribute('data-mermaid-chart');
+  });
+  try {
+    await mermaid.run({ nodes });
+  } catch (e) {
+    // エラーを図の場所に表示
+    nodes.forEach((el) => {
+      if (!el.querySelector('svg')) {
+        el.innerHTML = `<pre style="color:red;font-size:12px">[mermaid error] ${escHtml(String(e))}</pre>`;
+      }
+    });
+  }
+  initMermaidZoom();
+}
+
+function initMermaidZoom() {
+  previewContent.querySelectorAll('.mermaid').forEach((container) => {
+    const svg = container.querySelector('svg');
+    if (!svg || container.dataset.zoomInit) return;
+    container.dataset.zoomInit = '1';
+
+    let scale = 1, panX = 0, panY = 0;
+    let dragging = false, startX = 0, startY = 0, startPanX = 0, startPanY = 0;
+
+    svg.style.maxWidth = 'none';
+    svg.style.transformOrigin = '0 0';
+    svg.style.display = 'block';
+    container.style.overflow = 'hidden';
+    container.style.cursor = 'grab';
+    container.style.userSelect = 'none';
+
+    function applyTransform() {
+      svg.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+    }
+
+    container.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const rect = container.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+      const newScale = Math.min(Math.max(scale * factor, 0.1), 10);
+      panX = mx - (mx - panX) * (newScale / scale);
+      panY = my - (my - panY) * (newScale / scale);
+      scale = newScale;
+      applyTransform();
+    }, { passive: false });
+
+    container.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      dragging = true;
+      startX = e.clientX; startY = e.clientY;
+      startPanX = panX; startPanY = panY;
+      container.style.cursor = 'grabbing';
+      e.preventDefault();
+    });
+
+    const onMouseMove = (e) => {
+      if (!dragging) return;
+      panX = startPanX + (e.clientX - startX);
+      panY = startPanY + (e.clientY - startY);
+      applyTransform();
+    };
+    const onMouseUp = () => {
+      if (!dragging) return;
+      dragging = false;
+      container.style.cursor = 'grab';
+    };
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+
+    const controls = document.createElement('div');
+    controls.className = 'mermaid-controls';
+    controls.innerHTML =
+      '<button class="mz-btn" data-action="in" title="拡大">+</button>' +
+      '<button class="mz-btn" data-action="out" title="縮小">-</button>' +
+      '<button class="mz-btn" data-action="reset" title="リセット">&#x21BA;</button>';
+    controls.addEventListener('click', (e) => {
+      const action = e.target.closest('[data-action]')?.dataset.action;
+      if (action === 'in')         { scale = Math.min(scale * 1.25, 10); }
+      else if (action === 'out')   { scale = Math.max(scale / 1.25, 0.1); }
+      else if (action === 'reset') { scale = 1; panX = 0; panY = 0; }
+      else return;
+      applyTransform();
+    });
+    container.appendChild(controls);
+  });
 }
 
 function fixLocalLinks() {
