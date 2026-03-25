@@ -62,13 +62,16 @@ async function api(method, path, body) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if (body !== undefined) opts.body = JSON.stringify(body);
   const res = await fetch(path, opts);
-  const json = await res.json();
+  let json;
+  try { json = await res.json(); } catch { json = {}; }
   if (!res.ok) throw new Error(json.error || res.statusText);
   return json;
 }
-const get  = (p)    => api('GET',  p);
-const post = (p, b) => api('POST', p, b);
-const put  = (p, b) => api('PUT',  p, b);
+const get   = (p)    => api('GET',    p);
+const post  = (p, b) => api('POST',   p, b);
+const put   = (p, b) => api('PUT',    p, b);
+const patch = (p, b) => api('PATCH',  p, b);
+const del   = (p, b) => api('DELETE', p, b);
 
 // ---- Init ----------------------------------------------------------------
 async function init() {
@@ -221,8 +224,7 @@ async function refreshTree() {
 
     renderTreeNode(data.tree, fileTree, false);
     renderTagFilterBar();
-    const count = countFiles(data.tree);
-    sidebarFooter.textContent = `${count} ファイル`;
+    applySearch(state.searchQuery);
   } catch (err) {
     fileTree.innerHTML = `<div class="error-msg">エラー: ${err.message}</div>`;
   }
@@ -286,6 +288,16 @@ function makeDirEl(dir, forceExpand = false) {
     }
   });
 
+  row.addEventListener('contextmenu', (e) => {
+    e.stopPropagation();
+    showContextMenu(e, [
+      { label: '新規ファイル',   action: () => fsCreateFile(dir.path) },
+      { label: '新規フォルダ',   action: () => fsCreateFolder(dir.path) },
+      { label: 'リネーム',       action: () => fsRename(dir.path, false, row.querySelector('.dir-name')) },
+      { label: '削除',           action: () => fsDelete(dir.path, false), danger: true },
+    ]);
+  });
+
   frag.appendChild(row);
   frag.appendChild(childUl);
   return frag;
@@ -317,6 +329,13 @@ function makeFileEl(file) {
   div.appendChild(name);
   div.appendChild(right);
   div.addEventListener('click', () => openFile(file));
+  div.addEventListener('contextmenu', (e) => {
+    e.stopPropagation();
+    showContextMenu(e, [
+      { label: 'リネーム', action: () => fsRename(file.path, true, div.querySelector('.file-name')) },
+      { label: '削除',     action: () => fsDelete(file.path, true), danger: true },
+    ]);
+  });
   return div;
 }
 
@@ -919,6 +938,173 @@ function applySearch(query) {
   sidebarFooter.textContent = isFiltering ? `${visible} / ${total} ファイル` : `${total} ファイル`;
 }
 
+// ---- File management -----------------------------------------------------
+
+function toRelative(absPath) {
+  const root = state.currentRoot ?? '';
+  return absPath.startsWith(root) ? absPath.slice(root.length).replace(/^[/\\]/, '') : absPath;
+}
+
+function showNewItemInput(parentUl, placeholder) {
+  return new Promise((resolve) => {
+    const li = document.createElement('li');
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'inline-input';
+    input.placeholder = placeholder;
+    li.appendChild(input);
+    parentUl.prepend(li);
+    input.focus();
+    let settled = false;
+    function finish(value) {
+      if (settled) return; settled = true;
+      li.remove();
+      resolve(value?.trim() || null);
+    }
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter')  { e.preventDefault(); finish(input.value); }
+      if (e.key === 'Escape') { e.preventDefault(); finish(null); }
+      e.stopPropagation();
+    });
+    input.addEventListener('blur', () => setTimeout(() => finish(null), 200));
+  });
+}
+
+function startInlineRename(nameEl, oldName, isFile) {
+  return new Promise((resolve) => {
+    nameEl.textContent = '';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = oldName;
+    input.className = 'inline-input';
+    nameEl.appendChild(input);
+    input.focus();
+    const dotIdx = oldName.lastIndexOf('.');
+    input.setSelectionRange(0, isFile && dotIdx > 0 ? dotIdx : oldName.length);
+    let settled = false;
+    function finish(confirmed) {
+      if (settled) return; settled = true;
+      input.remove();
+      nameEl.textContent = oldName;
+      resolve(confirmed ? input.value.trim() : null);
+    }
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter')  { e.preventDefault(); finish(true); }
+      if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+      e.stopPropagation();
+    });
+    input.addEventListener('blur', () => setTimeout(() => finish(false), 200));
+  });
+}
+
+async function fsCreateFile(dirPath) {
+  const childUl = fileTree.querySelector(`.tree-children[data-dir-id="${CSS.escape(dirPath)}"]`);
+  if (childUl?.style.display === 'none') childUl.previousElementSibling?.click();
+  const targetUl = childUl ?? fileTree.querySelector('.tree-list');
+  if (!targetUl) return;
+  const name = await showNewItemInput(targetUl, 'ファイル名.md');
+  if (!name) return;
+  try {
+    const res = await post('/api/fs/file', { dir: dirPath, name });
+    // デフォルトタグ: アクティブなフィルタータグ ＋ 「新規」
+    const defaultTags = [...state.filterTags, '新規'];
+    const relPath = toRelative(res.path);
+    await put('/api/tags', { relativePath: relPath, tags: defaultTags, flagged: false, note: '' });
+    await refreshTree();
+    const fileName = res.path.split(/[/\\]/).pop();
+    openFile({ path: res.path, relativePath: relPath, name: fileName });
+  } catch (err) { showWarning(`ファイル作成エラー: ${err.message}`, 'error'); }
+}
+
+async function fsCreateFolder(dirPath) {
+  const childUl = fileTree.querySelector(`.tree-children[data-dir-id="${CSS.escape(dirPath)}"]`);
+  if (childUl?.style.display === 'none') childUl.previousElementSibling?.click();
+  const targetUl = childUl ?? fileTree.querySelector('.tree-list');
+  if (!targetUl) return;
+  const name = await showNewItemInput(targetUl, 'フォルダ名');
+  if (!name) return;
+  try {
+    await post('/api/fs/folder', { dir: dirPath, name });
+    await refreshTree();
+  } catch (err) { showWarning(`フォルダ作成エラー: ${err.message}`, 'error'); }
+}
+
+async function fsRename(oldPath, isFile, nameEl) {
+  const oldName = oldPath.split(/[/\\]/).pop();
+  const newName = await startInlineRename(nameEl, oldName, isFile);
+  if (!newName || newName === oldName) return;
+  const dir = oldPath.slice(0, oldPath.length - oldName.length);
+  const newPath = dir + (isFile && !newName.includes('.') ? newName + '.md' : newName);
+  try {
+    await patch('/api/fs/rename', { oldPath, newPath });
+    // state.tags のキーを旧相対パス→新相対パスに移動
+    const oldRel = toRelative(oldPath);
+    const newRel = toRelative(newPath);
+    if (state.tags[oldRel]) {
+      state.tags[newRel] = state.tags[oldRel];
+      delete state.tags[oldRel];
+    }
+    state.tabs.forEach((t) => {
+      if (t.path === oldPath || t.path.startsWith(oldPath + '\\') || t.path.startsWith(oldPath + '/')) {
+        const updated = t.path.replace(oldPath, newPath);
+        t.path = updated; t.name = updated.split(/[/\\]/).pop(); t.relativePath = toRelative(updated);
+      }
+    });
+    if (state.activeTabPath?.startsWith(oldPath)) state.activeTabPath = state.activeTabPath.replace(oldPath, newPath);
+    renderTabBar();
+    await refreshTree();
+  } catch (err) { showWarning(`リネームエラー: ${err.message}`, 'error'); }
+}
+
+async function fsDelete(path, isFile) {
+  const name = path.split(/[/\\]/).pop();
+  const msg = isFile ? `"${name}" を削除しますか？` : `フォルダ "${name}" とその中身を全て削除しますか？`;
+  if (!confirm(msg)) return;
+  try {
+    await del('/api/fs', { path });
+    state.tabs = state.tabs.filter((t) => {
+      const affected = t.path === path || t.path.startsWith(path + '\\') || t.path.startsWith(path + '/');
+      if (affected) { delete state.tabDirty[t.path]; delete state.tabEditorText[t.path]; }
+      return !affected;
+    });
+    if (!state.tabs.find((t) => t.path === state.activeTabPath)) {
+      state.activeTabPath = state.tabs[0]?.path ?? null;
+      state.isEditing = false;
+    }
+    renderTabBar();
+    await refreshTree();
+    if (state.activeTabPath) { const tab = activeTab(); if (tab) await renderFileContent(tab); else showEmptyState(); }
+    else showEmptyState();
+  } catch (err) { showWarning(`削除エラー: ${err.message}`, 'error'); }
+}
+
+// ---- Context menu --------------------------------------------------------
+
+let ctxMenu = null;
+
+function showContextMenu(e, items) {
+  hideContextMenu();
+  e.preventDefault();
+  ctxMenu = document.createElement('div');
+  ctxMenu.className = 'ctx-menu';
+  items.forEach(({ label, action, danger }) => {
+    const btn = document.createElement('button');
+    btn.className = 'ctx-item' + (danger ? ' ctx-danger' : '');
+    btn.textContent = label;
+    btn.addEventListener('mousedown', (ev) => { ev.preventDefault(); ev.stopPropagation(); hideContextMenu(); action(); });
+    ctxMenu.appendChild(btn);
+  });
+  document.body.appendChild(ctxMenu);
+  const r = ctxMenu.getBoundingClientRect();
+  let x = e.clientX, y = e.clientY;
+  if (x + r.width  > window.innerWidth)  x = window.innerWidth  - r.width  - 4;
+  if (y + r.height > window.innerHeight) y = window.innerHeight - r.height - 4;
+  ctxMenu.style.left = x + 'px';
+  ctxMenu.style.top  = y + 'px';
+}
+
+function hideContextMenu() { ctxMenu?.remove(); ctxMenu = null; }
+
 // ---- UI helpers ----------------------------------------------------------
 function showFileView() {
   emptyState.classList.add('hidden');
@@ -1047,6 +1233,20 @@ function bindEvents() {
   noteInput.addEventListener('change', () => saveNote(noteInput.value));
 
   searchInput.addEventListener('input', () => applySearch(searchInput.value));
+
+  // Context menu: close on outside click / Escape
+  document.addEventListener('click', hideContextMenu);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideContextMenu(); }, true);
+
+  // Right-click on empty tree area → create in root
+  fileTree.addEventListener('contextmenu', (e) => {
+    if (!state.currentRoot) return;
+    e.preventDefault();
+    showContextMenu(e, [
+      { label: '新規ファイル', action: () => fsCreateFile(state.currentRoot) },
+      { label: '新規フォルダ', action: () => fsCreateFolder(state.currentRoot) },
+    ]);
+  });
 
   document.addEventListener('keydown', handleKey);
 

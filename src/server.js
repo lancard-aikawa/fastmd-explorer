@@ -1,7 +1,7 @@
 import express from 'express';
 import { execSync } from 'child_process';
 import { readFileSync } from 'fs';
-import { readFile, writeFile, stat } from 'fs/promises';
+import { readFile, writeFile, stat, rename, mkdir, rm, access } from 'fs/promises';
 import { join, dirname, relative, normalize } from 'path';
 import { fileURLToPath } from 'url';
 import { marked } from 'marked';
@@ -13,7 +13,7 @@ import {
   getCachedHtml,
   setCachedHtml,
 } from './fileScanner.js';
-import { loadTags, updateFileTags } from './tagManager.js';
+import { loadTags, updateFileTags, renameFileTags } from './tagManager.js';
 import { getConfig, addFolderToHistory, serverConfig } from './configManager.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -229,6 +229,66 @@ export function createServer() {
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
+  });
+
+  // POST /api/fs/file  { dir, name }
+  app.post('/api/fs/file', async (req, res) => {
+    const { dir, name } = req.body ?? {};
+    if (!dir || !name) return res.status(400).json({ error: 'dir と name が必要です' });
+    const fileName = name.match(/\.[^.]+$/) ? name : name + '.md';
+    const filePath = normalize(join(dir, fileName));
+    if (!isAllowedPath(filePath, currentRoot)) return res.status(403).json({ error: '不正なパスです' });
+    try {
+      await access(filePath).then(() => { throw new Error('同名のファイルが既に存在します'); }).catch((e) => { if (e.code !== 'ENOENT') throw e; });
+      await writeFile(filePath, '', 'utf8');
+      invalidateCache(currentRoot);
+      res.json({ path: filePath });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  // POST /api/fs/folder  { dir, name }
+  app.post('/api/fs/folder', async (req, res) => {
+    const { dir, name } = req.body ?? {};
+    if (!dir || !name) return res.status(400).json({ error: 'dir と name が必要です' });
+    const folderPath = normalize(join(dir, name));
+    if (!isAllowedPath(folderPath, currentRoot)) return res.status(403).json({ error: '不正なパスです' });
+    try {
+      await mkdir(folderPath);
+      invalidateCache(currentRoot);
+      res.json({ path: folderPath });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  // PATCH /api/fs/rename  { oldPath, newPath }
+  app.patch('/api/fs/rename', async (req, res) => {
+    const { oldPath, newPath } = req.body ?? {};
+    if (!oldPath || !newPath) return res.status(400).json({ error: 'oldPath と newPath が必要です' });
+    if (!isAllowedPath(normalize(oldPath), currentRoot) || !isAllowedPath(normalize(newPath), currentRoot))
+      return res.status(403).json({ error: '不正なパスです' });
+    try {
+      await rename(normalize(oldPath), normalize(newPath));
+      invalidateCache(currentRoot);
+      // タグのキーも旧パス→新パスに移動
+      if (currentRoot) {
+        const oldRel = relative(currentRoot, normalize(oldPath));
+        const newRel = relative(currentRoot, normalize(newPath));
+        await renameFileTags(currentRoot, oldRel, newRel);
+      }
+      res.json({ ok: true, newPath: normalize(newPath) });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  // DELETE /api/fs  { path }
+  app.delete('/api/fs', async (req, res) => {
+    const filePath = req.body?.path;
+    if (!filePath || !isAllowedPath(normalize(filePath), currentRoot))
+      return res.status(403).json({ error: '不正なパスです' });
+    try {
+      const s = await stat(normalize(filePath));
+      await rm(normalize(filePath), { recursive: s.isDirectory(), force: true });
+      invalidateCache(currentRoot);
+      res.json({ ok: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
   // POST /api/refresh

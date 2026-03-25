@@ -23,6 +23,15 @@ export async function saveTags(rootPath, tags) {
   await writeFile(tagsFile(rootPath), JSON.stringify(tags, null, 2), 'utf8');
 }
 
+export async function renameFileTags(rootPath, oldRelative, newRelative) {
+  const tags = await loadTags(rootPath);
+  if (tags[oldRelative]) {
+    tags[newRelative] = tags[oldRelative];
+    delete tags[oldRelative];
+    await saveTags(rootPath, tags);
+  }
+}
+
 export async function updateFileTags(rootPath, relativePath, patch) {
   const tags = await loadTags(rootPath);
   const current = tags[relativePath] ?? { tags: [], flagged: false, note: '' };
