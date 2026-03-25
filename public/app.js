@@ -166,7 +166,7 @@ async function refreshTree() {
       return;
     }
 
-    renderTreeNode(data.tree, fileTree, true);
+    renderTreeNode(data.tree, fileTree, false);
     const count = countFiles(data.tree);
     sidebarFooter.textContent = `${count} ファイル`;
   } catch (err) {
