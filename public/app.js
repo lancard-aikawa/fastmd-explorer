@@ -736,7 +736,8 @@ function updateTreeActiveState() {
 function showWarning(html, type) {
   if (!html) { warningBar.classList.add('hidden'); warningBar.innerHTML = ''; return; }
   warningBar.className = type === 'error' ? 'bar-error' : 'bar-warn';
-  warningBar.innerHTML = html;
+  warningBar.innerHTML = html + '<button class="warning-close" title="閉じる">✕</button>';
+  warningBar.querySelector('.warning-close').addEventListener('click', () => showWarning(null));
   warningBar.classList.remove('hidden');
 }
 

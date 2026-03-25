@@ -54,7 +54,7 @@ async function scanDir(dirPath, rootPath, originalRoot, warnings, onFile) {
     return null;
   }
 
-  const dirs = [];
+  const dirEntries = [];
   const files = [];
 
   for (const entry of entries) {
@@ -79,30 +79,24 @@ async function scanDir(dirPath, rootPath, originalRoot, warnings, onFile) {
     }
 
     if (entry.isDirectory()) {
-      const child = await scanDir(fullPath, rootPath, originalRoot, warnings, onFile);
-      if (child) dirs.push(child);
+      dirEntries.push(fullPath);
     } else if (entry.isFile()) {
       const ext = extname(name).toLowerCase();
       if (!MD_EXTS.has(ext)) continue;
-
-      let fileStat;
-      try {
-        fileStat = await stat(fullPath);
-      } catch {
-        continue;
-      }
-
       onFile();
       files.push({
         type: 'file',
         name,
         path: fullPath,
         relativePath: relative(rootPath, fullPath),
-        mtime: fileStat.mtimeMs,
-        size: fileStat.size,
       });
     }
   }
+
+  // Scan subdirectories in parallel
+  const dirs = (await Promise.all(
+    dirEntries.map((p) => scanDir(p, rootPath, originalRoot, warnings, onFile))
+  )).filter(Boolean);
 
   if (dirs.length === 0 && files.length === 0) return null;
 

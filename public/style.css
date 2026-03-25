@@ -193,11 +193,26 @@ select { cursor: pointer; }
 
 /* Warning bar */
 #warning-bar {
-  padding: 6px 14px;
+  position: relative;
+  padding: 6px 36px 6px 14px;
   font-size: 12.5px;
   flex-shrink: 0;
   line-height: 1.5;
 }
+.warning-close {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  opacity: 0.6;
+  padding: 2px 4px;
+  color: inherit;
+}
+.warning-close:hover { opacity: 1; }
 #warning-bar.hidden { display: none; }
 .bar-warn  { background: var(--bg-warn);  color: #7a6000; border-bottom: 1px solid #e6c800; }
 .bar-error { background: var(--bg-error); color: #9e0000; border-bottom: 1px solid #e00; }
