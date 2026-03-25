@@ -1071,7 +1071,7 @@ async function fsCreateFile(dirPath) {
     await refreshTree();
     const fileName = res.path.split(/[/\\]/).pop();
     openFile({ path: res.path, relativePath: relPath, name: fileName });
-  } catch (err) { showWarning(`ファイル作成エラー: ${err.message}`, 'error'); }
+  } catch (err) { showWarning(`ファイル作成エラー: ${err.message}`, 'error'); await refreshTree(); }
 }
 
 async function fsCreateFolder(dirPath) {
@@ -1092,7 +1092,7 @@ async function fsCreateFolder(dirPath) {
     }
     await refreshTree();
     openFile({ path: res.path, relativePath: relPath, name: name + '.md' });
-  } catch (err) { showWarning(`フォルダ作成エラー: ${err.message}`, 'error'); }
+  } catch (err) { showWarning(`フォルダ作成エラー: ${err.message}`, 'error'); await refreshTree(); }
 }
 
 async function fsRename(oldPath, isFile, nameEl) {
@@ -1122,10 +1122,17 @@ async function fsRename(oldPath, isFile, nameEl) {
         t.path = updated; t.name = updated.split(/[/\\]/).pop(); t.relativePath = toRelative(updated);
       }
     });
-    if (state.activeTabPath?.startsWith(oldPath)) state.activeTabPath = state.activeTabPath.replace(oldPath, newPath);
+    if (state.activeTabPath === oldPath ||
+        state.activeTabPath?.startsWith(oldPath + '\\') ||
+        state.activeTabPath?.startsWith(oldPath + '/')) {
+      state.activeTabPath = state.activeTabPath.replace(oldPath, newPath);
+    }
     renderTabBar();
     await refreshTree();
-  } catch (err) { showWarning(`リネームエラー: ${err.message}`, 'error'); }
+  } catch (err) {
+    showWarning(`リネームエラー: ${err.message}`, 'error');
+    await refreshTree();
+  }
 }
 
 async function fsDelete(path, isFile) {

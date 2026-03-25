@@ -253,6 +253,7 @@ export function createServer() {
     const folderPath = normalize(join(dir, name));
     if (!isAllowedPath(folderPath, currentRoot)) return res.status(403).json({ error: '不正なパスです' });
     try {
+      await access(folderPath).then(() => { throw new Error('同名のフォルダが既に存在します'); }).catch((e) => { if (e.code !== 'ENOENT') throw e; });
       await mkdir(folderPath);
       invalidateCache(currentRoot);
       res.json({ path: folderPath });
@@ -266,6 +267,11 @@ export function createServer() {
     if (!isAllowedPath(normalize(oldPath), currentRoot) || !isAllowedPath(normalize(newPath), currentRoot))
       return res.status(403).json({ error: '不正なパスです' });
     try {
+      // リネーム先が既に存在する場合は拒否
+      try {
+        await access(normalize(newPath));
+        return res.status(409).json({ error: '同名のファイル/フォルダが既に存在します' });
+      } catch (e) { if (e.code !== 'ENOENT') throw e; }
       await rename(normalize(oldPath), normalize(newPath));
       invalidateCache(currentRoot);
       // タグのキーも旧パス→新パスに移動
