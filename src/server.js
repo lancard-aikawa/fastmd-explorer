@@ -14,7 +14,7 @@ import {
   setCachedHtml,
 } from './fileScanner.js';
 import { loadTags, updateFileTags } from './tagManager.js';
-import { getConfig, addFolderToHistory } from './configManager.js';
+import { getConfig, addFolderToHistory, serverConfig } from './configManager.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = dirname(__dirname);
@@ -115,8 +115,9 @@ export function createServer() {
 
   // GET /api/config
   app.get('/api/config', (_req, res) => {
-    const config = getConfig();
-    res.json({ ...config, currentRoot });
+    const config = getConfig();          // 履歴・lastFolder
+    const srv    = serverConfig();       // port・network・theme (mdexplorer.config.json)
+    res.json({ ...srv, ...config, currentRoot });
   });
 
   // POST /api/folder  { path }
