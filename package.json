@@ -1,0 +1,21 @@
+{
+  "name": "mdexplorer",
+  "version": "1.0.0",
+  "description": "Lightweight Markdown file explorer and previewer",
+  "type": "module",
+  "bin": {
+    "mdexplorer": "./src/cli.js"
+  },
+  "scripts": {
+    "start": "node src/cli.js",
+    "dev": "node --watch src/cli.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "marked": "^12.0.0",
+    "marked-highlight": "^2.1.1",
+    "highlight.js": "^11.9.0",
+    "mermaid": "^10.9.1",
+    "open": "^10.1.0"
+  }
+}

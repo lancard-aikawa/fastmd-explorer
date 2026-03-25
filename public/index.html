@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ja" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MdExplorer</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" id="hljs-theme" href="/vendor/hljs-light.css">
+</head>
+<body>
+  <div id="app">
+
+    <!-- Header -->
+    <header id="header">
+      <span class="logo">MdExplorer</span>
+      <div id="folder-bar">
+        <div id="folder-input-wrap">
+          <button id="btn-browse" title="フォルダを参照...">📂</button>
+          <input
+            type="text"
+            id="folder-input"
+            placeholder="フォルダパスを入力 (Enter で開く)..."
+            autocomplete="off"
+            spellcheck="false"
+          >
+          <button id="btn-open" title="フォルダを開く">開く</button>
+        </div>
+        <select id="history-select" title="履歴">
+          <option value="">履歴 ▾</option>
+        </select>
+      </div>
+      <div id="header-right">
+        <button id="btn-refresh" title="ファイルツリーを再読み込み (Ctrl+R)">↺</button>
+        <button id="btn-theme" title="テーマ切替">◐</button>
+      </div>
+    </header>
+
+    <!-- Warning bar -->
+    <div id="warning-bar" class="hidden"></div>
+
+    <!-- Main layout -->
+    <div id="main">
+
+      <!-- Sidebar -->
+      <aside id="sidebar">
+        <div id="sidebar-top">
+          <input
+            type="text"
+            id="search-input"
+            placeholder="ファイル検索... (Ctrl+F)"
+            autocomplete="off"
+          >
+        </div>
+        <div id="file-tree-wrap">
+          <div id="file-tree"></div>
+        </div>
+        <div id="sidebar-footer"></div>
+      </aside>
+
+      <div id="resize-handle"></div>
+
+      <!-- Content -->
+      <div id="content">
+
+        <!-- Tab bar (always present, hidden when no tabs) -->
+        <div id="tab-bar" class="hidden"></div>
+
+        <!-- No folder / no file selected -->
+        <div id="empty-state">
+          <div class="empty-icon">📂</div>
+          <p>上部のパス入力欄でフォルダを選択してください</p>
+          <p class="hint">Markdownファイルが一覧表示されます</p>
+        </div>
+
+        <!-- File view (shown when a file is active) -->
+        <div id="file-view" class="hidden">
+
+          <!-- File header -->
+          <div id="file-header">
+            <span id="file-breadcrumb"></span>
+            <div id="file-actions">
+              <button id="btn-flag" title="重要フラグ (Ctrl+I)">☆</button>
+              <button id="btn-edit" title="編集 (Ctrl+E)">編集</button>
+              <button id="btn-save" class="hidden" title="保存 (Ctrl+S)">保存</button>
+              <button id="btn-discard" class="hidden" title="変更を破棄">破棄</button>
+            </div>
+          </div>
+
+          <!-- Tags bar -->
+          <div id="tags-bar">
+            <div id="tags-list"></div>
+            <input
+              type="text"
+              id="tag-input"
+              placeholder="＋ タグ追加 (Enter)..."
+              autocomplete="off"
+            >
+          </div>
+
+          <!-- Note -->
+          <div id="note-bar">
+            <input
+              type="text"
+              id="note-input"
+              placeholder="メモ..."
+              autocomplete="off"
+            >
+          </div>
+
+          <!-- Preview -->
+          <div id="preview-panel">
+            <article id="preview-content" class="markdown-body"></article>
+          </div>
+
+          <!-- Editor -->
+          <div id="editor-panel" class="hidden">
+            <textarea id="editor" spellcheck="false"></textarea>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="/vendor/mermaid.min.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
