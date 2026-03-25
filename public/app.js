@@ -798,26 +798,61 @@ function initDragDrop() {
 
     let path = null;
 
-    // 1. Try file URI list (most reliable — works when dragging from Explorer/Finder/Nautilus)
+    // 1. text/uri-list — macOS Finder / Linux ファイルマネージャーはこれを提供する
     const uriList = e.dataTransfer.getData('text/uri-list');
     if (uriList) {
       const first = uriList.split(/\r?\n/).find((l) => l.startsWith('file://'));
       if (first) path = fileUriToPath(first.trim());
     }
 
-    // 2. Fallback: plain text (user dragging a path string)
+    // 2. text/plain — パス文字列をテキストとしてドラッグした場合
     if (!path) {
       const text = (e.dataTransfer.getData('text/plain') ?? '').trim();
       if (text && !text.includes('\n')) path = text;
     }
 
-    if (!path) {
-      showWarning('フォルダのパスを取得できませんでした。パス入力欄に直接入力してください。', 'warn');
+    if (path) {
+      folderInput.value = path;
+      await openFolder(path);
       return;
     }
 
-    folderInput.value = path;
-    await openFolder(path);
+    // 3. Windows Explorer はフォルダドロップ時に URI を渡さない（ブラウザのセキュリティ制限）。
+    //    FileSystemEntry API でフォルダ名だけは取得できるので、
+    //    履歴とマッチングして補助する。
+    const entry = e.dataTransfer.items?.[0]?.webkitGetAsEntry?.();
+    if (entry?.isDirectory) {
+      const name = entry.name;
+      try {
+        const config = await get('/api/config');
+        const match = (config.history ?? []).find(
+          (h) => h === name || h.endsWith('/' + name) || h.endsWith('\\' + name)
+        );
+        if (match) {
+          // 履歴に完全一致パスがあれば自動で開く
+          folderInput.value = match;
+          await openFolder(match);
+          return;
+        }
+      } catch { /* ignore */ }
+
+      // 一致なし — フォルダ名を入力欄に入れてユーザーに補完してもらう
+      folderInput.value = name;
+      folderInput.focus();
+      folderInput.select();
+      showWarning(
+        `"${escHtml(name)}" のフルパスが取得できませんでした（ブラウザの制限）。`
+        + ` パス入力欄を補完して Enter で開いてください。`,
+        'warn'
+      );
+      return;
+    }
+
+    // どの手段でも取得できなかった場合
+    showWarning(
+      'パスを取得できませんでした。📂ボタンかパス入力欄をご利用ください。',
+      'warn'
+    );
   });
 }
 
