@@ -36,8 +36,8 @@ marked.use({
   renderer: {
     code({ text, lang }) {
       if (lang === 'mermaid') {
-        // Escape only minimal chars so mermaid.js can parse it
-        return `<div class="mermaid">${escHtml(text)}</div>\n`;
+        // mermaid.js は element.innerHTML を読むためエスケープ不可
+        return `<div class="mermaid">${text}</div>\n`;
       }
       return false; // fall through to markedHighlight renderer
     },
