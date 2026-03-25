@@ -191,6 +191,26 @@ select { cursor: pointer; }
 }
 #header-right button:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.4); }
 
+#font-size-label {
+  cursor: pointer;
+  font-size: 12px;
+  min-width: 3em;
+  text-align: center;
+  color: var(--text-header);
+  opacity: 0.7;
+  border-radius: 3px;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  transition: all 0.15s;
+}
+#font-size-label:hover { opacity: 1; background: rgba(255,255,255,0.1); }
+#font-size-label.modified {
+  opacity: 1;
+  color: #ffd080;
+  border-color: rgba(255,208,128,0.5);
+  font-weight: bold;
+}
+
 /* Warning bar */
 #warning-bar {
   position: relative;
@@ -548,25 +568,31 @@ select { cursor: pointer; }
   user-select: none;
   border-radius: 4px;
   margin: 1px 4px;
+  margin-top: 3px;
+  background: rgba(128,128,128,0.06);
 }
-.tree-dir:hover { background: rgba(128,128,128,0.12); color: var(--text); }
+.tree-dir:hover { background: rgba(128,128,128,0.15); }
 
-.dir-arrow { font-size: 0.8em; width: 1em; flex-shrink: 0; }
-.dir-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dir-arrow { font-size: 0.8em; width: 1em; flex-shrink: 0; color: var(--accent); }
+.dir-name { font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dir-name::before { content: '📁'; margin-right: 4px; font-style: normal; }
 
 .tree-file {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 4px;
-  padding: 3px 8px;
+  padding: 3px 8px 3px 12px;
   cursor: pointer;
   font-size: 0.78em;
   border-radius: 4px;
   margin: 1px 4px;
   user-select: none;
+  color: var(--text);
+  font-weight: 500;
 }
-.tree-file:hover { background: rgba(128,128,128,0.12); }
+.tree-file:not(.active):hover { color: var(--text); }
+.tree-file:hover { background: rgba(128,128,128,0.12); color: var(--text); }
 .tree-file.active { background: var(--accent); color: #fff; }
 .tree-file.active .tag-chip { background: rgba(255,255,255,0.2); color: #fff; border-color: rgba(255,255,255,0.3); }
 .tree-file.active .flag-star { color: #ffe066; }

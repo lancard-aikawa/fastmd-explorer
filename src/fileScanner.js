@@ -11,7 +11,6 @@ const htmlCache = new Map();
 
 const SKIP_DIRS = new Set(['node_modules', '.git', '.svn', '__pycache__', 'dist', 'build', '.next', '.nuxt']);
 const MD_EXTS = new Set(['.md', '.markdown', '.mdown', '.mkd']);
-const MAX_FILES_WARN = 2000;
 
 /**
  * Scan a root directory for Markdown files recursively.
@@ -37,10 +36,6 @@ export async function scanMarkdownFiles(rootPath) {
   const tree = await scanDir(rootPath, rootPath, rootPath, warnings, () => {
     fileCount++;
   });
-
-  if (fileCount >= MAX_FILES_WARN) {
-    warnings.push(`ファイル数が ${fileCount} 件を超えています。スキャンに時間がかかる場合があります。`);
-  }
 
   treeCache.set(rootPath, { mtime: rootStat.mtimeMs, tree, fileCount, warnings });
   return { tree, fileCount, warnings };

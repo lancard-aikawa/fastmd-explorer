@@ -94,7 +94,7 @@ const FONT_MIN = 12, FONT_MAX = 24, FONT_DEFAULT = 16, FONT_STEP = 1;
 function applyFontSize(size) {
   document.documentElement.style.setProperty('--preview-font-size', `${size}px`);
   fontSizeLabel.textContent = `${size}px`;
-  fontSizeLabel.style.fontWeight = size === FONT_DEFAULT ? '' : 'bold';
+  fontSizeLabel.classList.toggle('modified', size !== FONT_DEFAULT);
   localStorage.setItem('previewFontSize', size);
 }
 
@@ -200,6 +200,7 @@ function populateHistory(history) {
 // ---- File tree -----------------------------------------------------------
 async function refreshTree() {
   fileTree.innerHTML = '<div class="loading">読み込み中...</div>';
+  sidebarFooter.textContent = 'スキャン中...';
   try {
     const data = await get('/api/files');
     state.tags = data.tags ?? {};
@@ -262,6 +263,8 @@ function makeDirEl(dir, forceExpand = false) {
 
   const childUl = document.createElement('ul');
   childUl.className = 'tree-list tree-children';
+  childUl.dataset.dirId = id;
+  childUl._dirChildren = dir.children ?? [];
   childUl.style.display = expanded ? '' : 'none';
   if (expanded) renderChildren(dir.children ?? [], childUl);
 
@@ -763,6 +766,21 @@ function refreshTreeItem(tab) {
 // ---- Search filter -------------------------------------------------------
 function applySearch(query) {
   state.searchQuery = query.toLowerCase();
+
+  // Force-render all unrendered dirs so deep files are searchable
+  if (state.searchQuery) {
+    let rendered;
+    do {
+      rendered = 0;
+      fileTree.querySelectorAll('.tree-children').forEach((ul) => {
+        if (ul.childElementCount === 0 && ul._dirChildren?.length) {
+          renderChildren(ul._dirChildren, ul);
+          rendered++;
+        }
+      });
+    } while (rendered > 0);
+  }
+
   const items = fileTree.querySelectorAll('.tree-file');
   let visible = 0;
 
@@ -774,11 +792,18 @@ function applySearch(query) {
     if (match) visible++;
   });
 
-  // Expand dirs that have visible children when searching
+  // Show/hide dirs based on matching files; restore collapsed state when cleared
   fileTree.querySelectorAll('.tree-children').forEach((ul) => {
+    const dirRow = ul.previousElementSibling;
     if (state.searchQuery) {
       const hasVisible = [...ul.querySelectorAll('.tree-file')].some((el) => el.style.display !== 'none');
       ul.style.display = hasVisible ? '' : 'none';
+      if (dirRow?.classList.contains('tree-dir')) dirRow.style.display = hasVisible ? '' : 'none';
+    } else {
+      // Restore to the user's expanded/collapsed state
+      const expanded = state.expandedDirs.has(ul.dataset.dirId);
+      ul.style.display = expanded ? '' : 'none';
+      if (dirRow?.classList.contains('tree-dir')) dirRow.style.display = '';
     }
   });
 
