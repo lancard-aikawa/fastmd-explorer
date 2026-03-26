@@ -10,7 +10,8 @@ const treeCache = new Map();
 const htmlCache = new Map();
 
 const SKIP_DIRS = new Set(['node_modules', '.git', '.svn', '__pycache__', 'dist', 'build', '.next', '.nuxt']);
-const MD_EXTS = new Set(['.md', '.markdown', '.mdown', '.mkd']);
+const MD_EXTS    = new Set(['.md', '.markdown', '.mdown', '.mkd']);
+export const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp']);
 
 /**
  * Scan a root directory for Markdown files recursively.
@@ -77,14 +78,12 @@ async function scanDir(dirPath, rootPath, originalRoot, warnings, onFile) {
       dirEntries.push(fullPath);
     } else if (entry.isFile()) {
       const ext = extname(name).toLowerCase();
-      if (!MD_EXTS.has(ext)) continue;
-      onFile();
-      files.push({
-        type: 'file',
-        name,
-        path: fullPath,
-        relativePath: relative(rootPath, fullPath),
-      });
+      if (MD_EXTS.has(ext)) {
+        onFile();
+        files.push({ type: 'file', name, path: fullPath, relativePath: relative(rootPath, fullPath) });
+      } else if (IMAGE_EXTS.has(ext)) {
+        files.push({ type: 'image', name, path: fullPath, relativePath: relative(rootPath, fullPath) });
+      }
     }
   }
 

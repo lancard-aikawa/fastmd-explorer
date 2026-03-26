@@ -19,6 +19,7 @@ const state = {
   tabDirty:       {},    // { [path]: boolean }
   tabEditorText:  {},    // { [path]: string } — saved when switching away in edit mode
   isEditing:      false,
+  showImages:     localStorage.getItem('showImages') === '1',
 };
 
 // ---- DOM refs ------------------------------------------------------------
@@ -40,6 +41,7 @@ const sidebarFooter  = $('sidebar-footer');
 const recentPanel    = $('recent-files-panel');
 const searchInput    = $('search-input');
 const btnFulltext    = $('btn-fulltext');
+const btnShowImages  = $('btn-show-images');
 const fulltextPanel  = $('fulltext-panel');
 const fulltextInput  = $('fulltext-input');
 const fulltextResults = $('fulltext-results');
@@ -333,11 +335,39 @@ function renderChildren(children, ul, forceExpand = false) {
     const li = document.createElement('li');
     if (child.type === 'dir') {
       li.appendChild(makeDirEl(child, forceExpand));
+    } else if (child.type === 'image') {
+      if (state.showImages) li.appendChild(makeImageEl(child));
+      else return; // skip
     } else {
       li.appendChild(makeFileEl(child));
     }
     ul.appendChild(li);
   });
+}
+
+function makeImageEl(file) {
+  const div = document.createElement('div');
+  div.className = 'tree-image';
+  div.dataset.path = file.path;
+
+  const thumb = document.createElement('img');
+  thumb.className = 'tree-image-thumb';
+  thumb.src = `/api/image?path=${encodeURIComponent(file.path)}`;
+  thumb.alt = file.name;
+  thumb.loading = 'lazy';
+  thumb.addEventListener('click', () => {
+    // Open image in new tab
+    window.open(`/api/image?path=${encodeURIComponent(file.path)}`, '_blank', 'noreferrer');
+  });
+
+  const label = document.createElement('span');
+  label.className = 'tree-image-name';
+  label.textContent = file.name;
+  label.title = file.name;
+
+  div.appendChild(thumb);
+  div.appendChild(label);
+  return div;
 }
 
 function makeDirEl(dir, forceExpand = false) {
@@ -1471,11 +1501,17 @@ function applySearch(query) {
     if (match) visible++;
   });
 
+  // Filter image items by search query
+  fileTree.querySelectorAll('.tree-image').forEach((el) => {
+    const name = (el.querySelector('.tree-image-name')?.textContent ?? '').toLowerCase();
+    el.style.display = (!state.searchQuery || name.includes(state.searchQuery)) ? '' : 'none';
+  });
+
   // Show/hide dirs based on matching files; restore collapsed state when cleared
   fileTree.querySelectorAll('.tree-children').forEach((ul) => {
     const dirRow = ul.previousElementSibling;
     if (isFiltering) {
-      const hasVisible = [...ul.querySelectorAll('.tree-file')].some((el) => el.style.display !== 'none');
+      const hasVisible = [...ul.querySelectorAll('.tree-file, .tree-image')].some((el) => el.style.display !== 'none');
       ul.style.display = hasVisible ? '' : 'none';
       if (dirRow?.classList.contains('tree-dir')) dirRow.style.display = hasVisible ? '' : 'none';
     } else {
@@ -1876,6 +1912,15 @@ function bindEvents() {
   searchInput.addEventListener('input', () => applySearch(searchInput.value));
   btnFulltext.addEventListener('click', toggleFulltextPanel);
   fulltextInput.addEventListener('input', scheduleFulltextSearch);
+
+  // Image toggle
+  btnShowImages.classList.toggle('active', state.showImages);
+  btnShowImages.addEventListener('click', () => {
+    state.showImages = !state.showImages;
+    localStorage.setItem('showImages', state.showImages ? '1' : '0');
+    btnShowImages.classList.toggle('active', state.showImages);
+    refreshTree();
+  });
 
   // Context menu: close on outside click / Escape
   document.addEventListener('click', hideContextMenu);

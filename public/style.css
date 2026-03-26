@@ -752,6 +752,32 @@ select { cursor: pointer; }
 .tree-file.active .tag-chip { background: rgba(255,255,255,0.2); color: #fff; border-color: rgba(255,255,255,0.3); }
 .tree-file.active .flag-star { color: #ffe066; }
 
+/* Image items in tree */
+.tree-image {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 12px;
+  cursor: pointer;
+}
+.tree-image:hover { background: rgba(128,128,128,0.1); }
+.tree-image-thumb {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--bg-code);
+}
+.tree-image-name {
+  font-size: 0.78em;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .file-name {
   overflow: hidden;
   text-overflow: ellipsis;
