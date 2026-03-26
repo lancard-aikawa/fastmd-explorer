@@ -1079,14 +1079,14 @@ function syncScrollEditorToPreview() {
   if (_scrollLock) return;
   _scrollLock = true;
   const ratio = editor.scrollTop / Math.max(1, editor.scrollHeight - editor.clientHeight);
-  previewPanel.scrollTop = ratio * (previewPanel.scrollHeight - previewPanel.clientHeight);
+  previewContent.scrollTop = ratio * (previewContent.scrollHeight - previewContent.clientHeight);
   requestAnimationFrame(() => { _scrollLock = false; });
 }
 
 function syncScrollPreviewToEditor() {
   if (_scrollLock) return;
   _scrollLock = true;
-  const ratio = previewPanel.scrollTop / Math.max(1, previewPanel.scrollHeight - previewPanel.clientHeight);
+  const ratio = previewContent.scrollTop / Math.max(1, previewContent.scrollHeight - previewContent.clientHeight);
   editor.scrollTop = ratio * (editor.scrollHeight - editor.clientHeight);
   requestAnimationFrame(() => { _scrollLock = false; });
 }
@@ -1971,7 +1971,7 @@ function bindEvents() {
   });
 
   editor.addEventListener('scroll', syncScrollEditorToPreview);
-  previewPanel.addEventListener('scroll', () => { if (state.isEditing) syncScrollPreviewToEditor(); });
+  previewContent.addEventListener('scroll', () => { if (state.isEditing) syncScrollPreviewToEditor(); });
 
   tagInput.addEventListener('keydown', async (e) => {
     if (e.key === 'Enter') { await addTag(tagInput.value); tagInput.value = ''; }

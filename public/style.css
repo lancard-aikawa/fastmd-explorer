@@ -715,6 +715,9 @@ select { cursor: pointer; }
 #edit-area.split #preview-panel {
   border-right: none;
 }
+#edit-area.split #outline-panel {
+  display: none;
+}
 
 #editor-panel {
   flex: 1;
