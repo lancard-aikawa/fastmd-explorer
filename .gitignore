@@ -2,3 +2,5 @@ node_modules/
 .mdexplorer/
 mdexplorer.config.json
 sandbox/
+.server.pid
+server.log
