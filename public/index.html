@@ -53,6 +53,17 @@
             placeholder="ファイル検索... (Ctrl+F)"
             autocomplete="off"
           >
+          <button id="btn-fulltext" title="全文検索 (Ctrl+G)">🔍</button>
+        </div>
+        <div id="fulltext-panel" class="hidden">
+          <input
+            type="text"
+            id="fulltext-input"
+            placeholder="全文検索..."
+            autocomplete="off"
+            spellcheck="false"
+          >
+          <div id="fulltext-results"></div>
         </div>
         <div id="tag-filter-bar" class="hidden"></div>
         <div id="file-tree-wrap">

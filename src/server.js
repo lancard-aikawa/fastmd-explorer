@@ -1,7 +1,7 @@
 import express from 'express';
 import { execSync } from 'child_process';
 import { readFileSync } from 'fs';
-import { readFile, writeFile, stat, rename, mkdir, rm, access } from 'fs/promises';
+import { readFile, writeFile, stat, rename, mkdir, rm, access, readdir } from 'fs/promises';
 import { join, dirname, relative, normalize } from 'path';
 import { fileURLToPath } from 'url';
 import { marked } from 'marked';
@@ -294,6 +294,68 @@ export function createServer() {
       invalidateCache(currentRoot);
       res.json({ ok: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  // GET /api/search?q=...  (SSE: progress + results streaming)
+  app.get('/api/search', async (req, res) => {
+    const q = req.query.q?.trim();
+    if (!q || !currentRoot) {
+      res.setHeader('Content-Type', 'application/json');
+      return res.status(400).json({ error: 'q またはフォルダが未設定です' });
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+
+    const query = q.toLowerCase();
+    const MAX_FILES = 50;
+    const MAX_MATCHES_PER_FILE = 3;
+    const CONTEXT_LEN = 120;
+    let scanned = 0;
+    let found = 0;
+
+    async function walk(dir) {
+      if (found >= MAX_FILES) return;
+      let entries;
+      try { entries = await readdir(dir, { withFileTypes: true }); } catch { return; }
+      for (const entry of entries) {
+        if (found >= MAX_FILES) break;
+        if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+        const fullPath = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          await walk(fullPath);
+        } else if (entry.name.endsWith('.md')) {
+          scanned++;
+          if (scanned % 50 === 0) send({ type: 'progress', scanned, found });
+          let content;
+          try { content = await readFile(fullPath, 'utf8'); } catch { continue; }
+          const lines = content.split('\n');
+          const matches = [];
+          for (let i = 0; i < lines.length && matches.length < MAX_MATCHES_PER_FILE; i++) {
+            const lower = lines[i].toLowerCase();
+            const idx = lower.indexOf(query);
+            if (idx === -1) continue;
+            const start = Math.max(0, idx - 30);
+            const text = lines[i].slice(start, start + CONTEXT_LEN);
+            matches.push({ lineNum: i + 1, text: (start > 0 ? '…' : '') + text });
+          }
+          if (matches.length) {
+            found++;
+            send({ type: 'result', path: fullPath, relativePath: relative(currentRoot, fullPath).replace(/\\/g, '/'), name: entry.name, matches });
+          }
+        }
+      }
+    }
+
+    try {
+      await walk(currentRoot);
+      send({ type: 'done', scanned, found, truncated: found >= MAX_FILES });
+    } catch (err) {
+      send({ type: 'error', message: err.message });
+    }
+    res.end();
   });
 
   // POST /api/refresh

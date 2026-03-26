@@ -881,6 +881,81 @@ select { cursor: pointer; }
   opacity: 0.8;
 }
 
+/* ---- Full-text search ----------------------------------------------------- */
+#sidebar-top { display: flex; gap: 4px; align-items: center; }
+#sidebar-top #search-input { flex: 1; }
+#btn-fulltext { flex-shrink: 0; padding: 4px 7px; font-size: 0.85em; }
+
+#fulltext-panel {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--border);
+}
+#fulltext-input {
+  margin: 4px 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.9em;
+  outline: none;
+}
+#fulltext-input:focus { border-color: var(--accent); }
+#fulltext-results {
+  overflow-y: auto;
+  max-height: 300px;
+  padding: 2px 0;
+}
+.ft-progress, .ft-loading, .ft-empty, .ft-note {
+  font-size: 0.8em;
+  color: var(--text-dim);
+  padding: 4px 12px;
+}
+.ft-item {
+  padding: 5px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+.ft-item:hover { background: rgba(128,128,128,0.1); }
+.ft-title {
+  font-size: 0.85em;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ft-ctx {
+  font-size: 0.78em;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-left: 6px;
+}
+.ft-linenum { opacity: 0.6; }
+.ft-hl {
+  background: #ffe066;
+  color: #333;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+[data-theme="dark"] .ft-hl {
+  background: #b8860b;
+  color: #fff;
+}
+mark.hl-search {
+  background: #ffe066;
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+[data-theme="dark"] mark.hl-search {
+  background: #b8860b;
+  color: #fff;
+}
+
 /* ---- File info bar -------------------------------------------------------- */
 #file-info-bar {
   font-size: 0.75em;

@@ -38,6 +38,10 @@ const warningBar     = $('warning-bar');
 const fileTree       = $('file-tree');
 const sidebarFooter  = $('sidebar-footer');
 const searchInput    = $('search-input');
+const btnFulltext    = $('btn-fulltext');
+const fulltextPanel  = $('fulltext-panel');
+const fulltextInput  = $('fulltext-input');
+const fulltextResults = $('fulltext-results');
 const emptyState     = $('empty-state');
 const fileView       = $('file-view');
 const tabBar         = $('tab-bar');
@@ -425,8 +429,8 @@ function renderTabBar() {
   activeEl?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 
-async function switchToTab(path) {
-  if (path === state.activeTabPath) return;
+async function switchToTab(path, highlight = null) {
+  if (path === state.activeTabPath && !highlight) return;
 
   // If currently editing and dirty, save editor text before switching
   if (state.isEditing && state.activeTabPath) {
@@ -441,7 +445,7 @@ async function switchToTab(path) {
 
   const tab = state.tabs.find((t) => t.path === path);
   if (!tab) return;
-  await renderFileContent(tab);
+  await renderFileContent(tab, highlight);
 }
 
 async function closeTab(path) {
@@ -492,7 +496,7 @@ async function openFile(file) {
   // Already open in a tab?
   const existing = state.tabs.find((t) => t.path === file.path);
   if (existing) {
-    await switchToTab(file.path);
+    await switchToTab(file.path, file.highlight ?? null);
     return;
   }
 
@@ -509,10 +513,10 @@ async function openFile(file) {
 
   renderTabBar();
   updateTreeActiveState();
-  await renderFileContent(tab);
+  await renderFileContent(tab, file.highlight ?? null);
 }
 
-async function renderFileContent(tab) {
+async function renderFileContent(tab, highlight = null) {
   showFileView();
   exitEditModeUI(); // reset edit buttons
 
@@ -530,6 +534,7 @@ async function renderFileContent(tab) {
     previewPanel.scrollTop = 0;
     await renderMermaid();
     fixLocalLinks();
+    if (highlight) highlightInPreview(highlight);
     updateFileInfo(mtime, charCount);
     updateOutline();
   } catch (err) {
@@ -578,6 +583,43 @@ function updateOutline() {
     });
     outlinePanel.appendChild(a);
   });
+}
+
+function highlightInPreview(q) {
+  if (!q) return;
+  const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+  const SKIP = new Set(['SCRIPT', 'STYLE', 'PRE', 'CODE', 'MARK', 'SVG', 'TEXTAREA']);
+
+  function walk(node) {
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      if (SKIP.has(node.tagName) || node.classList.contains('mermaid')) return;
+      for (const child of Array.from(node.childNodes)) walk(child);
+    } else if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent;
+      re.lastIndex = 0;
+      if (!re.test(text)) return;
+      re.lastIndex = 0;
+      const frag = document.createDocumentFragment();
+      let last = 0;
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+        const mark = document.createElement('mark');
+        mark.className = 'hl-search';
+        mark.textContent = m[0];
+        frag.appendChild(mark);
+        last = m.index + m[0].length;
+      }
+      if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+      node.parentNode.replaceChild(frag, node);
+    }
+  }
+
+  walk(previewContent);
+
+  // Scroll to first match
+  const first = previewContent.querySelector('mark.hl-search');
+  if (first) first.scrollIntoView({ block: 'center' });
 }
 
 async function renderMermaid() {
@@ -953,6 +995,120 @@ function renderTagFilterBar() {
   tagFilterBar.appendChild(chips);
 }
 
+// ---- Full-text search ----------------------------------------------------
+let fulltextTimer = null;
+
+function toggleFulltextPanel() {
+  const open = !fulltextPanel.classList.contains('hidden');
+  if (open) {
+    fulltextPanel.classList.add('hidden');
+    btnFulltext.classList.remove('active');
+  } else {
+    fulltextPanel.classList.remove('hidden');
+    btnFulltext.classList.add('active');
+    setTimeout(() => fulltextInput.focus(), 0);
+  }
+}
+
+function scheduleFulltextSearch() {
+  clearTimeout(fulltextTimer);
+  if (_fulltextES) { _fulltextES.close(); _fulltextES = null; }
+  const q = fulltextInput.value.trim();
+  if (!q) { fulltextResults.innerHTML = ''; return; }
+  fulltextTimer = setTimeout(() => runFulltextSearch(q), 400);
+}
+
+let _fulltextES = null;
+
+function runFulltextSearch(q) {
+  // Close any previous stream
+  if (_fulltextES) { _fulltextES.close(); _fulltextES = null; }
+
+  fulltextResults.innerHTML = '';
+
+  const progress = document.createElement('div');
+  progress.className = 'ft-progress';
+  progress.textContent = 'スキャン中...';
+  fulltextResults.appendChild(progress);
+
+  let foundCount = 0;
+
+  const es = new EventSource(`/api/search?q=${encodeURIComponent(q)}`);
+  _fulltextES = es;
+
+  const reQ = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+  function hlText(el, rawText) {
+    let html = '';
+    let last = 0;
+    let m;
+    reQ.lastIndex = 0;
+    while ((m = reQ.exec(rawText)) !== null) {
+      html += escHtml(rawText.slice(last, m.index));
+      html += `<mark class="ft-hl">${escHtml(m[0])}</mark>`;
+      last = m.index + m[0].length;
+    }
+    html += escHtml(rawText.slice(last));
+    el.innerHTML = html;
+  }
+
+  function appendResult({ path, relativePath, matches }) {
+    const item = document.createElement('div');
+    item.className = 'ft-item';
+    const title = document.createElement('div');
+    title.className = 'ft-title';
+    title.textContent = relativePath;
+    title.title = relativePath;
+    item.appendChild(title);
+    matches.forEach(({ lineNum, text }) => {
+      const ctx = document.createElement('div');
+      ctx.className = 'ft-ctx';
+      const prefix = document.createElement('span');
+      prefix.className = 'ft-linenum';
+      prefix.textContent = `${lineNum}: `;
+      const body = document.createElement('span');
+      hlText(body, text);
+      ctx.appendChild(prefix);
+      ctx.appendChild(body);
+      item.appendChild(ctx);
+    });
+    item.addEventListener('click', () => {
+      openFile({ path, relativePath, name: relativePath.split('/').pop(), highlight: q });
+    });
+    fulltextResults.appendChild(item);
+  }
+
+  es.addEventListener('message', (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'progress') {
+      progress.textContent = `スキャン中: ${msg.scanned}件 / ${msg.found}ヒット`;
+    } else if (msg.type === 'result') {
+      foundCount++;
+      appendResult(msg);
+    } else if (msg.type === 'done') {
+      es.close();
+      _fulltextES = null;
+      progress.remove();
+      if (foundCount === 0) {
+        fulltextResults.innerHTML = '<div class="ft-empty">一致なし</div>';
+      } else if (msg.truncated) {
+        const note = document.createElement('div');
+        note.className = 'ft-note';
+        note.textContent = `上位${foundCount}件を表示`;
+        fulltextResults.insertBefore(note, fulltextResults.firstChild);
+      }
+    }
+  });
+
+  es.addEventListener('error', () => {
+    es.close();
+    _fulltextES = null;
+    progress.remove();
+    if (foundCount === 0) {
+      fulltextResults.innerHTML = '<div class="ft-empty">検索エラー</div>';
+    }
+  });
+}
+
 // ---- Search filter -------------------------------------------------------
 function applySearch(query) {
   state.searchQuery = query.toLowerCase();
@@ -1299,6 +1455,7 @@ function handleKey(e) {
   }
   if (e.key === 'r') { e.preventDefault(); btnRefresh.click(); }
   if (e.key === 'f') { e.preventDefault(); searchInput.focus(); searchInput.select(); }
+  if (e.key === 'g') { e.preventDefault(); toggleFulltextPanel(); }
   if (e.key === 's' && state.isEditing) { e.preventDefault(); saveFile(); }
   if (e.key === 'e' && !state.isEditing && state.activeTabPath) { e.preventDefault(); enterEditMode(); }
   if (e.key === 'i' && state.activeTabPath) { e.preventDefault(); toggleFlag(); }
@@ -1367,6 +1524,8 @@ function bindEvents() {
   noteInput.addEventListener('change', () => saveNote(noteInput.value));
 
   searchInput.addEventListener('input', () => applySearch(searchInput.value));
+  btnFulltext.addEventListener('click', toggleFulltextPanel);
+  fulltextInput.addEventListener('input', scheduleFulltextSearch);
 
   // Context menu: close on outside click / Escape
   document.addEventListener('click', hideContextMenu);
