@@ -43,14 +43,17 @@ const fileView       = $('file-view');
 const tabBar         = $('tab-bar');
 const fileBreadcrumb = $('file-breadcrumb');
 const btnFlag        = $('btn-flag');
+const btnPrint       = $('btn-print');
 const btnEdit        = $('btn-edit');
 const btnSave        = $('btn-save');
 const btnDiscard     = $('btn-discard');
 const tagsList       = $('tags-list');
 const tagInput       = $('tag-input');
 const noteInput      = $('note-input');
+const fileInfoBar    = $('file-info-bar');
 const previewPanel   = $('preview-panel');
 const previewContent = $('preview-content');
+const outlinePanel   = $('outline-panel');
 const editorPanel    = $('editor-panel');
 const editor         = $('editor');
 const hljsTheme      = $('hljs-theme');
@@ -518,16 +521,63 @@ async function renderFileContent(tab) {
   updateNoteBar(tab);
 
   previewContent.innerHTML = '<div class="loading">レンダリング中...</div>';
+  fileInfoBar.textContent = '';
+  outlinePanel.innerHTML = '';
 
   try {
-    const { html } = await get(`/api/preview?path=${encodeURIComponent(tab.path)}`);
+    const { html, mtime, charCount } = await get(`/api/preview?path=${encodeURIComponent(tab.path)}`);
     previewContent.innerHTML = html;
     previewPanel.scrollTop = 0;
     await renderMermaid();
     fixLocalLinks();
+    updateFileInfo(mtime, charCount);
+    updateOutline();
   } catch (err) {
     previewContent.innerHTML = `<div class="error-msg">エラー: ${escHtml(err.message)}</div>`;
   }
+}
+
+function updateFileInfo(mtime, charCount) {
+  if (!mtime) { fileInfoBar.textContent = ''; return; }
+  const d = new Date(mtime);
+  const date = `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  const headings = previewContent.querySelectorAll('h1,h2,h3,h4').length;
+  fileInfoBar.textContent = `更新: ${date}　文字数: ${charCount ?? '—'}　見出し: ${headings}`;
+}
+
+function updateOutline() {
+  outlinePanel.innerHTML = '';
+
+  // 折り畳みストリップ（常に表示）
+  const strip = document.createElement('div');
+  strip.className = 'outline-strip';
+  const collapsed = localStorage.getItem('outlineCollapsed') === '1';
+  outlinePanel.classList.toggle('collapsed', collapsed);
+  strip.textContent = collapsed ? '▶' : '◀';
+  strip.title = collapsed ? 'アウトラインを開く' : 'アウトラインを閉じる';
+  strip.addEventListener('click', () => {
+    outlinePanel.classList.toggle('collapsed');
+    localStorage.setItem('outlineCollapsed', outlinePanel.classList.contains('collapsed') ? '1' : '0');
+    strip.textContent = outlinePanel.classList.contains('collapsed') ? '▶' : '◀';
+    strip.title = outlinePanel.classList.contains('collapsed') ? 'アウトラインを開く' : 'アウトラインを閉じる';
+  });
+  outlinePanel.appendChild(strip);
+
+  const headings = [...previewContent.querySelectorAll('h1,h2,h3,h4')];
+  if (!headings.length) return;
+
+  headings.forEach((h) => {
+    const level = parseInt(h.tagName[1]);
+    const a = document.createElement('a');
+    a.className = `outline-item outline-h${level}`;
+    a.textContent = h.textContent;
+    a.href = '#';
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    outlinePanel.appendChild(a);
+  });
 }
 
 async function renderMermaid() {
@@ -1298,6 +1348,7 @@ function bindEvents() {
   fontSizeLabel.addEventListener('click', () => applyFontSize(FONT_DEFAULT));
 
   btnFlag.addEventListener('click',    toggleFlag);
+  btnPrint.addEventListener('click', () => window.print());
   btnEdit.addEventListener('click',    enterEditMode);
   btnSave.addEventListener('click',    saveFile);
   btnDiscard.addEventListener('click', () => { state.tabDirty[state.activeTabPath] = false; delete state.tabEditorText[state.activeTabPath]; renderTabBar(); exitEditMode(false); });

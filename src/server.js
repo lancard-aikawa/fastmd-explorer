@@ -163,13 +163,12 @@ export function createServer() {
     }
     try {
       const fileStat = await stat(filePath);
-      const cached = getCachedHtml(filePath, fileStat.mtimeMs);
-      if (cached) return res.json({ html: cached });
-
       const content = await readFile(filePath, 'utf8');
-      const html = marked.parse(content);
-      setCachedHtml(filePath, fileStat.mtimeMs, html);
-      res.json({ html });
+      const charCount = [...content.replace(/\s+/g, '')].length;
+      const cached = getCachedHtml(filePath, fileStat.mtimeMs);
+      const html = cached ?? marked.parse(content);
+      if (!cached) setCachedHtml(filePath, fileStat.mtimeMs, html);
+      res.json({ html, mtime: fileStat.mtimeMs, charCount });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
