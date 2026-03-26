@@ -2035,9 +2035,10 @@ function initDragDrop() {
           reader.onerror = reject;
           reader.readAsDataURL(file);
         });
-        const { relativePath } = await post('/api/upload-image', { base64, filename: file.name, dir });
-        // Insert markdown image syntax at cursor; wrap path in <> if it contains spaces
-        const href = relativePath.includes(' ') ? `<${relativePath}>` : relativePath;
+        await post('/api/upload-image', { base64, filename: file.name, dir });
+        // Image is saved in the same directory as the current file,
+        // so use just the filename as the relative path.
+        const href = file.name.includes(' ') ? `<${file.name}>` : file.name;
         const ins = `![${file.name.replace(/\.[^.]+$/, '')}](${href})`;
         const pos = editor.selectionStart;
         editor.value = editor.value.slice(0, pos) + ins + editor.value.slice(pos);
