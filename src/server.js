@@ -174,6 +174,32 @@ export function createServer() {
     }
   });
 
+  // POST /api/upload-image  { base64, filename, dir }  → { relativePath, path }
+  app.post('/api/upload-image', async (req, res) => {
+    const { base64, filename, dir } = req.body ?? {};
+    if (!base64 || !filename || !dir) return res.status(400).json({ error: 'base64 / filename / dir が必要です' });
+    if (!isAllowedPath(normalize(dir), currentRoot)) return res.status(403).json({ error: '不正なパスです' });
+    // Only allow image extensions
+    if (!/\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(filename)) return res.status(400).json({ error: '画像ファイルのみ対応です' });
+    try {
+      const data = Buffer.from(base64.replace(/^data:[^;]+;base64,/, ''), 'base64');
+      const savePath = join(normalize(dir), filename);
+      await writeFile(savePath, data);
+      res.json({ path: savePath, relativePath: relative(currentRoot, savePath).replace(/\\/g, '/') });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  // POST /api/render  { content }  → { html }  (live preview while editing)
+  app.post('/api/render', (req, res) => {
+    const { content } = req.body ?? {};
+    if (typeof content !== 'string') return res.status(400).json({ error: 'content が必要です' });
+    try {
+      res.json({ html: marked.parse(content) });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // GET /api/file?path=...
   app.get('/api/file', async (req, res) => {
     const filePath = req.query.path;
@@ -293,6 +319,52 @@ export function createServer() {
       await rm(normalize(filePath), { recursive: s.isDirectory(), force: true });
       invalidateCache(currentRoot);
       res.json({ ok: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  // GET /api/backlinks?path=...  → { links: [{ path, relativePath, name, lineNum, text }] }
+  app.get('/api/backlinks', async (req, res) => {
+    const targetPath = req.query.path;
+    if (!targetPath || !currentRoot) return res.status(400).json({ error: 'path またはフォルダが未設定です' });
+
+    // Build patterns to search: the filename and the relativePath (both with/without .md)
+    const targetRel  = relative(currentRoot, normalize(targetPath)).replace(/\\/g, '/');
+    const targetName = targetRel.split('/').pop();         // e.g. "note.md"
+    const targetBase = targetName.replace(/\.md$/i, '');  // e.g. "note"
+
+    const links = [];
+    async function walk(dir) {
+      let entries;
+      try { entries = await readdir(dir, { withFileTypes: true }); } catch { return; }
+      for (const entry of entries) {
+        if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+        const fullPath = join(dir, entry.name);
+        if (entry.isDirectory()) { await walk(fullPath); continue; }
+        if (!entry.name.endsWith('.md')) continue;
+        if (normalize(fullPath) === normalize(targetPath)) continue; // skip self
+
+        let content;
+        try { content = await readFile(fullPath, 'utf8'); } catch { continue; }
+        const lines = content.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          // Match [[note]] [[note.md]] [text](note.md) [text](path/note.md) etc.
+          if (line.includes(targetBase) || line.includes(targetRel)) {
+            links.push({
+              path: fullPath,
+              relativePath: relative(currentRoot, fullPath).replace(/\\/g, '/'),
+              name: entry.name,
+              lineNum: i + 1,
+              text: line.trim().slice(0, 120),
+            });
+            break; // one entry per file
+          }
+        }
+      }
+    }
+    try {
+      await walk(currentRoot);
+      res.json({ links });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 

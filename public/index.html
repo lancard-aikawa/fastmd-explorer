@@ -106,6 +106,9 @@
           <!-- File info bar -->
           <div id="file-info-bar"></div>
 
+          <!-- Backlinks bar -->
+          <div id="backlinks-bar" class="hidden"></div>
+
           <!-- Tags bar -->
           <div id="tags-bar">
             <div id="tags-list"></div>
@@ -136,15 +139,36 @@
             <button id="find-close" title="閉じる (Esc)">✕</button>
           </div>
 
-          <!-- Preview + Outline -->
-          <div id="preview-panel">
-            <article id="preview-content" class="markdown-body"></article>
-            <nav id="outline-panel"></nav>
-          </div>
+          <!-- Preview / Editor (split when editing) -->
+          <div id="edit-area">
+            <!-- Preview + Outline -->
+            <div id="preview-panel">
+              <article id="preview-content" class="markdown-body"></article>
+              <nav id="outline-panel"></nav>
+            </div>
 
-          <!-- Editor -->
-          <div id="editor-panel" class="hidden">
-            <textarea id="editor" spellcheck="false"></textarea>
+            <!-- Editor -->
+            <div id="editor-panel" class="hidden">
+              <div id="editor-toolbar">
+                <button data-cmd="bold"    title="太字 (Ctrl+B)"><b>B</b></button>
+                <button data-cmd="italic"  title="斜体 (Ctrl+I)"><i>I</i></button>
+                <button data-cmd="strike"  title="打ち消し">S̶</button>
+                <span class="tb-sep"></span>
+                <button data-cmd="h1"      title="見出し1">H1</button>
+                <button data-cmd="h2"      title="見出し2">H2</button>
+                <button data-cmd="h3"      title="見出し3">H3</button>
+                <span class="tb-sep"></span>
+                <button data-cmd="ul"      title="箇条書き">・</button>
+                <button data-cmd="ol"      title="番号付きリスト">1.</button>
+                <button data-cmd="check"   title="チェックリスト">☑</button>
+                <span class="tb-sep"></span>
+                <button data-cmd="link"    title="リンク">🔗</button>
+                <button data-cmd="code"    title="インラインコード">`</button>
+                <button data-cmd="codeblock" title="コードブロック">```</button>
+                <button data-cmd="table"   title="テーブル挿入">⊞</button>
+              </div>
+              <textarea id="editor" spellcheck="false"></textarea>
+            </div>
           </div>
 
         </div>

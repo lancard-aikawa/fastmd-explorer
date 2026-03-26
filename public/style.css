@@ -628,16 +628,71 @@ select { cursor: pointer; }
 #note-input:focus { outline: none; color: var(--text); }
 
 /* Preview & editor panels */
+#edit-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+/* Split view when editing */
+#edit-area.split {
+  flex-direction: row;
+}
+#edit-area.split #editor-panel,
+#edit-area.split #preview-panel {
+  flex: 1;
+  width: 50%;
+  border-right: 1px solid var(--border);
+}
+#edit-area.split #preview-panel {
+  border-right: none;
+}
+
 #editor-panel {
   flex: 1;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   min-height: 0;
-  padding: 0;
+}
+
+#editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px;
+  background: var(--bg-sidebar);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+#editor-toolbar button {
+  padding: 2px 7px;
+  font-size: 0.8em;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: var(--text);
+  min-width: 26px;
+}
+#editor-toolbar button:hover {
+  background: var(--bg);
+  border-color: var(--border);
+}
+.tb-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+  margin: 0 4px;
 }
 
 #editor {
+  flex: 1;
   width: 100%;
-  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
   resize: none;
   border: none;
   border-radius: 0;
@@ -1056,6 +1111,26 @@ mark.find-hl-active {
 [data-theme="dark"] mark.find-hl { background: #b8860b; color: #fff; }
 [data-theme="dark"] mark.find-hl-active { background: #e6a800; color: #000; }
 
+/* ---- Backlinks bar -------------------------------------------------------- */
+#backlinks-bar {
+  font-size: 0.75em;
+  padding: 3px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-sidebar);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#backlinks-bar.hidden { display: none; }
+.bl-header { color: var(--text-dim); }
+.bl-link {
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.bl-link:hover { opacity: 0.75; }
+
 /* ---- File info bar -------------------------------------------------------- */
 #file-info-bar {
   font-size: 0.75em;
@@ -1130,7 +1205,7 @@ mark.find-hl-active {
 /* ---- Print ---------------------------------------------------------------- */
 @media print {
   #header, #sidebar, #resize-handle, #tab-bar,
-  #file-actions, #tags-bar, #note-bar, #file-info-bar, #find-bar,
+  #file-actions, #tags-bar, #note-bar, #file-info-bar, #backlinks-bar, #find-bar,
   #outline-panel, #warning-bar, #drop-overlay { display: none !important; }
   #main { display: block; }
   #content { overflow: visible; }

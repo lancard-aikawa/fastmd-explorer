@@ -56,6 +56,7 @@ const tagsList       = $('tags-list');
 const tagInput       = $('tag-input');
 const noteInput      = $('note-input');
 const fileInfoBar    = $('file-info-bar');
+const backlinksBar   = $('backlinks-bar');
 const findBar        = $('find-bar');
 const findInput      = $('find-input');
 const findCount      = $('find-count');
@@ -65,6 +66,7 @@ const findClose      = $('find-close');
 const previewPanel   = $('preview-panel');
 const previewContent = $('preview-content');
 const outlinePanel   = $('outline-panel');
+const editArea       = $('edit-area');
 const editorPanel    = $('editor-panel');
 const editor         = $('editor');
 const hljsTheme      = $('hljs-theme');
@@ -580,6 +582,8 @@ async function renderFileContent(tab, highlight = null) {
 
   previewContent.innerHTML = '<div class="loading">レンダリング中...</div>';
   fileInfoBar.textContent = '';
+  backlinksBar.innerHTML = '';
+  backlinksBar.classList.add('hidden');
   outlinePanel.innerHTML = '';
   closeFindBar();
 
@@ -594,6 +598,7 @@ async function renderFileContent(tab, highlight = null) {
     if (highlight) highlightInPreview(highlight);
     updateFileInfo(mtime, charCount);
     updateOutline();
+    updateBacklinks(tab.path);
   } catch (err) {
     previewContent.innerHTML = `<div class="error-msg">エラー: ${escHtml(err.message)}</div>`;
   }
@@ -605,6 +610,30 @@ function updateFileInfo(mtime, charCount) {
   const date = `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
   const headings = previewContent.querySelectorAll('h1,h2,h3,h4').length;
   fileInfoBar.textContent = `更新: ${date}　文字数: ${charCount ?? '—'}　見出し: ${headings}`;
+}
+
+async function updateBacklinks(filePath) {
+  backlinksBar.innerHTML = '';
+  backlinksBar.classList.add('hidden');
+  if (!filePath) return;
+  try {
+    const { links } = await get(`/api/backlinks?path=${encodeURIComponent(filePath)}`);
+    if (!links.length) return;
+    backlinksBar.classList.remove('hidden');
+    const header = document.createElement('span');
+    header.className = 'bl-header';
+    header.textContent = `被参照: ${links.length}件 → `;
+    backlinksBar.appendChild(header);
+    links.forEach((l, i) => {
+      if (i > 0) { const sep = document.createElement('span'); sep.textContent = ' · '; backlinksBar.appendChild(sep); }
+      const a = document.createElement('span');
+      a.className = 'bl-link';
+      a.textContent = l.name.replace(/\.md$/i, '');
+      a.title = `${l.relativePath}  (行 ${l.lineNum}): ${l.text}`;
+      a.addEventListener('click', () => openFile({ path: l.path, relativePath: l.relativePath, name: l.name }));
+      backlinksBar.appendChild(a);
+    });
+  } catch { /* ignore */ }
 }
 
 function updateOutline() {
@@ -926,13 +955,116 @@ function fixLocalLinks() {
   });
 }
 
+// ---- Editor toolbar ------------------------------------------------------
+function applyEditorCmd(cmd) {
+  const ta = editor;
+  const start = ta.selectionStart;
+  const end   = ta.selectionEnd;
+  const sel   = ta.value.slice(start, end);
+  const before = ta.value.slice(0, start);
+  const after  = ta.value.slice(end);
+
+  let newVal, newStart, newEnd;
+
+  const wrap = (pre, post = pre) => {
+    newVal   = before + pre + sel + post + after;
+    newStart = start + pre.length;
+    newEnd   = end   + pre.length;
+  };
+
+  const linePrefix = (prefix) => {
+    // Apply prefix to each selected line
+    const lineStart = before.lastIndexOf('\n') + 1;
+    const fullLine  = ta.value.slice(lineStart, end);
+    const lines     = (before.slice(lineStart) + sel).split('\n');
+    const prefixed  = lines.map((l, i) => {
+      if (cmd === 'ol') return `${i + 1}. ${l}`;
+      return prefix + l;
+    }).join('\n');
+    newVal   = ta.value.slice(0, lineStart) + prefixed + after;
+    newStart = lineStart + prefixed.length - (sel.length ? 0 : 0);
+    newEnd   = newStart;
+  };
+
+  switch (cmd) {
+    case 'bold':      wrap('**'); break;
+    case 'italic':    wrap('*'); break;
+    case 'strike':    wrap('~~'); break;
+    case 'h1':        linePrefix('# '); break;
+    case 'h2':        linePrefix('## '); break;
+    case 'h3':        linePrefix('### '); break;
+    case 'ul':        linePrefix('- '); break;
+    case 'ol':        linePrefix(''); break;
+    case 'check':     linePrefix('- [ ] '); break;
+    case 'code':      wrap('`'); break;
+    case 'codeblock': wrap('\n```\n', '\n```\n'); break;
+    case 'link': {
+      const url = sel || 'https://';
+      const label = sel ? sel : 'リンクテキスト';
+      newVal   = before + `[${label}](${url})` + after;
+      newStart = start + 1;
+      newEnd   = start + 1 + label.length;
+      break;
+    }
+    case 'table': {
+      const tbl = '\n| 列1 | 列2 | 列3 |\n|------|------|------|\n| セル | セル | セル |\n';
+      newVal   = before + tbl + after;
+      newStart = newEnd = start + tbl.length;
+      break;
+    }
+    default: return;
+  }
+
+  ta.focus();
+  ta.value = newVal;
+  ta.setSelectionRange(newStart, newEnd);
+  ta.dispatchEvent(new Event('input'));
+}
+
+// ---- Live preview & scroll sync ------------------------------------------
+let _liveTimer = null;
+let _scrollLock = false;
+
+function scheduleLivePreview() {
+  clearTimeout(_liveTimer);
+  _liveTimer = setTimeout(runLivePreview, 400);
+}
+
+async function runLivePreview() {
+  try {
+    const { html } = await post('/api/render', { content: editor.value });
+    previewContent.innerHTML = html;
+    await renderMermaid();
+    fixLocalLinks();
+    addCopyButtons();
+    addTableSort();
+  } catch { /* ignore */ }
+}
+
+function syncScrollEditorToPreview() {
+  if (_scrollLock) return;
+  _scrollLock = true;
+  const ratio = editor.scrollTop / Math.max(1, editor.scrollHeight - editor.clientHeight);
+  previewPanel.scrollTop = ratio * (previewPanel.scrollHeight - previewPanel.clientHeight);
+  requestAnimationFrame(() => { _scrollLock = false; });
+}
+
+function syncScrollPreviewToEditor() {
+  if (_scrollLock) return;
+  _scrollLock = true;
+  const ratio = previewPanel.scrollTop / Math.max(1, previewPanel.scrollHeight - previewPanel.clientHeight);
+  editor.scrollTop = ratio * (editor.scrollHeight - editor.clientHeight);
+  requestAnimationFrame(() => { _scrollLock = false; });
+}
+
 // ---- Edit mode -----------------------------------------------------------
 async function enterEditMode() {
   if (!state.activeTabPath) return;
   state.isEditing = true;
 
-  previewPanel.classList.add('hidden');
+  editArea.classList.add('split');
   editorPanel.classList.remove('hidden');
+  previewPanel.classList.remove('hidden');
   btnEdit.classList.add('hidden');
   btnSave.classList.remove('hidden');
   btnDiscard.classList.remove('hidden');
@@ -950,6 +1082,7 @@ async function enterEditMode() {
       showWarning(`読み込みエラー: ${err.message}`, 'error');
     }
   }
+  scheduleLivePreview();
 }
 
 async function saveFile() {
@@ -989,6 +1122,7 @@ async function exitEditMode(reload = false) {
 
 function exitEditModeUI() {
   state.isEditing = false;
+  editArea.classList.remove('split');
   editorPanel.classList.add('hidden');
   previewPanel.classList.remove('hidden');
   btnEdit.classList.remove('hidden');
@@ -1722,7 +1856,16 @@ function bindEvents() {
       state.tabDirty[state.activeTabPath] = true;
       renderTabBar(); // show dirty dot
     }
+    scheduleLivePreview();
   });
+
+  document.getElementById('editor-toolbar').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-cmd]');
+    if (btn) applyEditorCmd(btn.dataset.cmd);
+  });
+
+  editor.addEventListener('scroll', syncScrollEditorToPreview);
+  previewPanel.addEventListener('scroll', () => { if (state.isEditing) syncScrollPreviewToEditor(); });
 
   tagInput.addEventListener('keydown', async (e) => {
     if (e.key === 'Enter') { await addTag(tagInput.value); tagInput.value = ''; }
@@ -1851,9 +1994,48 @@ function initDragDrop() {
 
     // どの手段でも取得できなかった場合
     showWarning(
-      'パスを取得できませんでした。📂ボタンかパス入力欄をご利用ください。',
+      'パスを取得できませんでました。📂ボタンかパス入力欄をご利用ください。',
       'warn'
     );
+  });
+
+  // ---- Image drop into editor --------------------------------------------
+  editor.addEventListener('dragover', (e) => {
+    if ([...e.dataTransfer.items].some((i) => i.kind === 'file' && i.type.startsWith('image/'))) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  });
+
+  editor.addEventListener('drop', async (e) => {
+    const files = [...e.dataTransfer.files].filter((f) => f.type.startsWith('image/'));
+    if (!files.length) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!state.activeTabPath) return;
+    const dir = state.activeTabPath.replace(/[/\\][^/\\]+$/, ''); // folder of current file
+
+    for (const file of files) {
+      try {
+        const base64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        const { relativePath } = await post('/api/upload-image', { base64, filename: file.name, dir });
+        // Insert markdown image syntax at cursor
+        const ins = `![${file.name.replace(/\.[^.]+$/, '')}](${relativePath})`;
+        const pos = editor.selectionStart;
+        editor.value = editor.value.slice(0, pos) + ins + editor.value.slice(pos);
+        editor.selectionStart = editor.selectionEnd = pos + ins.length;
+        editor.dispatchEvent(new Event('input'));
+      } catch (err) {
+        showWarning(`画像アップロードエラー: ${escHtml(err.message)}`, 'error');
+      }
+    }
   });
 }
 
