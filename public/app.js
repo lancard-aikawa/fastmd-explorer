@@ -2000,8 +2000,18 @@ function initDragDrop() {
   });
 
   // ---- Image drop into editor --------------------------------------------
+  function isImageDrag(e) {
+    return [...(e.dataTransfer?.items ?? [])].some((i) => i.kind === 'file' && i.type.startsWith('image/'));
+  }
+
+  editor.addEventListener('dragenter', (e) => {
+    if (isImageDrag(e)) { e.preventDefault(); e.stopPropagation(); }
+  });
+  editor.addEventListener('dragleave', (e) => {
+    if (isImageDrag(e)) { e.stopPropagation(); }
+  });
   editor.addEventListener('dragover', (e) => {
-    if ([...e.dataTransfer.items].some((i) => i.kind === 'file' && i.type.startsWith('image/'))) {
+    if (isImageDrag(e)) {
       e.preventDefault();
       e.stopPropagation();
       e.dataTransfer.dropEffect = 'copy';
