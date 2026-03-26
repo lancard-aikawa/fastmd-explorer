@@ -149,6 +149,10 @@ async function openFolder(rawPath) {
     state.tabDirty = {};
     state.tabEditorText = {};
     state.isEditing = false;
+    state.filterTags.clear();
+    state.filterFlagged = false;
+    state.searchQuery = '';
+    searchInput.value = '';
     folderInput.value = res.path;
     populateHistory(res.config.history ?? []);
 
