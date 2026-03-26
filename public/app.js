@@ -1032,7 +1032,7 @@ function scheduleLivePreview() {
 
 async function runLivePreview() {
   try {
-    const { html } = await post('/api/render', { content: editor.value });
+    const { html } = await post('/api/render', { content: editor.value, filePath: state.activeTabPath });
     previewContent.innerHTML = html;
     await renderMermaid();
     fixLocalLinks();
@@ -2036,8 +2036,9 @@ function initDragDrop() {
           reader.readAsDataURL(file);
         });
         const { relativePath } = await post('/api/upload-image', { base64, filename: file.name, dir });
-        // Insert markdown image syntax at cursor
-        const ins = `![${file.name.replace(/\.[^.]+$/, '')}](${relativePath})`;
+        // Insert markdown image syntax at cursor; wrap path in <> if it contains spaces
+        const href = relativePath.includes(' ') ? `<${relativePath}>` : relativePath;
+        const ins = `![${file.name.replace(/\.[^.]+$/, '')}](${href})`;
         const pos = editor.selectionStart;
         editor.value = editor.value.slice(0, pos) + ins + editor.value.slice(pos);
         editor.selectionStart = editor.selectionEnd = pos + ins.length;

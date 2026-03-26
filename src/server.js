@@ -155,6 +155,26 @@ export function createServer() {
     }
   });
 
+  // GET /api/image?path=...  (proxy for images under currentRoot)
+  app.get('/api/image', async (req, res) => {
+    const imgPath = normalize(req.query.path ?? '');
+    if (!imgPath || !isAllowedPath(imgPath, currentRoot))
+      return res.status(403).send('Forbidden');
+    try {
+      res.sendFile(imgPath);
+    } catch (err) { res.status(404).send('Not found'); }
+  });
+
+  // Rewrite relative <img src> to /api/image?path=... so the browser can load them
+  function rewriteImageSrcs(html, fileDir) {
+    return html.replace(/<img([^>]*?)src="([^"]*)"([^>]*?)>/gi, (match, pre, src, post) => {
+      if (!src || /^(https?:\/\/|data:|\/)/i.test(src)) return match;
+      const decoded = decodeURIComponent(src);
+      const absPath = join(fileDir, decoded).replace(/\\/g, '/');
+      return `<img${pre}src="/api/image?path=${encodeURIComponent(absPath)}"${post}>`;
+    });
+  }
+
   // GET /api/preview?path=...
   app.get('/api/preview', async (req, res) => {
     const filePath = req.query.path;
@@ -166,8 +186,9 @@ export function createServer() {
       const content = await readFile(filePath, 'utf8');
       const charCount = [...content.replace(/\s+/g, '')].length;
       const cached = getCachedHtml(filePath, fileStat.mtimeMs);
-      const html = cached ?? marked.parse(content);
-      if (!cached) setCachedHtml(filePath, fileStat.mtimeMs, html);
+      const rawHtml = cached ?? marked.parse(content);
+      if (!cached) setCachedHtml(filePath, fileStat.mtimeMs, rawHtml);
+      const html = rewriteImageSrcs(rawHtml, dirname(filePath));
       res.json({ html, mtime: fileStat.mtimeMs, charCount });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -189,12 +210,14 @@ export function createServer() {
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  // POST /api/render  { content }  → { html }  (live preview while editing)
+  // POST /api/render  { content, filePath? }  → { html }  (live preview while editing)
   app.post('/api/render', (req, res) => {
-    const { content } = req.body ?? {};
+    const { content, filePath } = req.body ?? {};
     if (typeof content !== 'string') return res.status(400).json({ error: 'content が必要です' });
     try {
-      res.json({ html: marked.parse(content) });
+      const rawHtml = marked.parse(content);
+      const html = filePath ? rewriteImageSrcs(rawHtml, dirname(normalize(filePath))) : rawHtml;
+      res.json({ html });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
