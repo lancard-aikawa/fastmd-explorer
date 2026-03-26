@@ -551,8 +551,8 @@ select { cursor: pointer; }
   color: var(--text);
 }
 #image-actions button:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
-#img-close { background: #e53e3e; color: #fff; border-color: #c53030; font-weight: 600; }
-#img-close:hover { background: #c53030; border-color: #9b2c2c; }
+#image-actions #img-close { background: #e53e3e; color: #fff; border-color: #c53030; font-weight: 600; }
+#image-actions #img-close:hover { background: #c53030; border-color: #9b2c2c; }
 #image-stage {
   flex: 1;
   overflow: auto;
