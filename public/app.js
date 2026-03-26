@@ -47,6 +47,10 @@ const fulltextInput  = $('fulltext-input');
 const fulltextResults = $('fulltext-results');
 const emptyState     = $('empty-state');
 const fileView       = $('file-view');
+const imageView      = $('image-view');
+const imageBreadcrumb = $('image-breadcrumb');
+const imageDisplay   = $('image-display');
+const imageStage     = $('image-stage');
 const tabBar         = $('tab-bar');
 const fileBreadcrumb = $('file-breadcrumb');
 const btnFlag        = $('btn-flag');
@@ -355,16 +359,14 @@ function makeImageEl(file) {
   thumb.src = `/api/image?path=${encodeURIComponent(file.path)}`;
   thumb.alt = file.name;
   thumb.loading = 'lazy';
-  thumb.addEventListener('click', () => {
-    // Open image in new tab
-    window.open(`/api/image?path=${encodeURIComponent(file.path)}`, '_blank', 'noreferrer');
-  });
+  thumb.addEventListener('click', () => openImageView(file));
 
   const label = document.createElement('span');
   label.className = 'tree-image-name';
   label.textContent = file.name;
   label.title = file.name;
 
+  label.addEventListener('click', () => openImageView(file));
   div.appendChild(thumb);
   div.appendChild(label);
   return div;
@@ -1759,12 +1761,73 @@ function hideContextMenu() { ctxMenu?.remove(); ctxMenu = null; }
 // ---- UI helpers ----------------------------------------------------------
 function showFileView() {
   emptyState.classList.add('hidden');
+  imageView.classList.add('hidden');
   fileView.classList.remove('hidden');
 }
 
 function showEmptyState() {
   fileView.classList.add('hidden');
+  imageView.classList.add('hidden');
   emptyState.classList.remove('hidden');
+}
+
+// ---- Image viewer --------------------------------------------------------
+let _imgScale = null; // null = fit mode
+let _imgPath  = null;
+
+function openImageView(file) {
+  _imgPath = file.path;
+  _imgScale = null;
+
+  fileView.classList.add('hidden');
+  emptyState.classList.add('hidden');
+  imageView.classList.remove('hidden');
+
+  imageBreadcrumb.textContent = file.relativePath ?? file.name;
+  imageDisplay.src = `/api/image?path=${encodeURIComponent(file.path)}`;
+  applyImgScale();
+}
+
+function applyImgScale() {
+  if (_imgScale === null) {
+    imageDisplay.style.maxWidth  = '100%';
+    imageDisplay.style.maxHeight = '100%';
+    imageDisplay.style.width     = '';
+    imageDisplay.style.height    = '';
+  } else {
+    imageDisplay.style.maxWidth  = 'none';
+    imageDisplay.style.maxHeight = 'none';
+    imageDisplay.style.width     = `${_imgScale}%`;
+    imageDisplay.style.height    = 'auto';
+  }
+}
+
+function bindImageViewer() {
+  $('img-zoom-in').addEventListener('click', () => {
+    _imgScale = (_imgScale ?? 100) * 1.25;
+    applyImgScale();
+  });
+  $('img-zoom-reset').addEventListener('click', () => {
+    _imgScale = 100;
+    applyImgScale();
+  });
+  $('img-zoom-fit').addEventListener('click', () => {
+    _imgScale = null;
+    applyImgScale();
+  });
+  $('img-open-tab').addEventListener('click', () => {
+    if (_imgPath) window.open(`/api/image?path=${encodeURIComponent(_imgPath)}`, '_blank', 'noreferrer');
+  });
+
+  // Scroll wheel zoom on stage
+  imageStage.addEventListener('wheel', (e) => {
+    if (!imageView.classList.contains('hidden')) {
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.1 : 0.9;
+      _imgScale = (_imgScale ?? 100) * factor;
+      applyImgScale();
+    }
+  }, { passive: false });
 }
 
 function updateTreeActiveState() {
@@ -1940,6 +2003,7 @@ function bindEvents() {
 
   initResize();
   initDragDrop();
+  bindImageViewer();
 }
 
 // ---- Drag & drop ---------------------------------------------------------
