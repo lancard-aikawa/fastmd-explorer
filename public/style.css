@@ -1082,7 +1082,8 @@ select { cursor: pointer; }
 /* ---- Full-text search ----------------------------------------------------- */
 #sidebar-top { display: flex; gap: 4px; align-items: center; }
 #sidebar-top #search-input { flex: 1; }
-#btn-fulltext { flex-shrink: 0; padding: 4px 7px; font-size: 0.85em; }
+#btn-fulltext, #btn-show-images { flex-shrink: 0; padding: 4px 7px; font-size: 0.85em; }
+#btn-show-images.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
 #fulltext-panel {
   display: flex;
