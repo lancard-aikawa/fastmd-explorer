@@ -97,11 +97,16 @@ async function scanDir(dirPath, rootPath, originalRoot, warnings, onFile) {
   dirs.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
   files.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
+  const hasMd     = files.some((f) => f.type === 'file')   || dirs.some((d) => d.hasMd);
+  const hasImages = files.some((f) => f.type === 'image')  || dirs.some((d) => d.hasImages);
+
   return {
     type: 'dir',
     name: relative(rootPath, dirPath) || '.',
     path: dirPath,
     children: [...dirs, ...files],
+    hasMd,
+    hasImages,
   };
 }
 

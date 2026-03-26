@@ -380,7 +380,9 @@ function makeDirEl(dir, forceExpand = false) {
 
   const row = document.createElement('div');
   row.className = 'tree-dir';
-  row.innerHTML = `<span class="dir-arrow">${expanded ? '▾' : '▸'}</span><span class="dir-name">${escHtml(dir.name)}</span>`;
+  const badges = (dir.hasMd ? '<span class="dir-badge dir-badge-md">md</span>' : '')
+               + (dir.hasImages ? '<span class="dir-badge dir-badge-img">img</span>' : '');
+  row.innerHTML = `<span class="dir-arrow">${expanded ? '▾' : '▸'}</span><span class="dir-name">${escHtml(dir.name)}</span>${badges}`;
 
   const childUl = document.createElement('ul');
   childUl.className = 'tree-list tree-children';

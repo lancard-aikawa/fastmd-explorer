@@ -789,6 +789,18 @@ select { cursor: pointer; }
   background: rgba(128,128,128,0.06);
 }
 .tree-dir:hover { background: rgba(128,128,128,0.15); }
+.dir-badge {
+  font-size: 0.7em;
+  padding: 0 4px;
+  border-radius: 3px;
+  line-height: 1.5;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+.dir-badge-md  { background: rgba(59,130,246,0.15); color: #3b82f6; }
+.dir-badge-img { background: rgba(16,185,129,0.15); color: #10b981; }
+[data-theme="dark"] .dir-badge-md  { background: rgba(96,165,250,0.2); color: #60a5fa; }
+[data-theme="dark"] .dir-badge-img { background: rgba(52,211,153,0.2); color: #34d399; }
 
 .dir-arrow { font-size: 0.8em; width: 1em; flex-shrink: 0; color: var(--accent); }
 .dir-name { font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
