@@ -56,8 +56,7 @@ async function scanDir(dirPath, rootPath, originalRoot, warnings, onFile) {
   for (const entry of entries) {
     const name = entry.name;
 
-    // Skip hidden directories (except .mdexplorer which holds our tags)
-    if (name.startsWith('.') && name !== '.mdexplorer') continue;
+    if (name.startsWith('.')) continue;
     if (SKIP_DIRS.has(name)) continue;
 
     const fullPath = join(dirPath, name);
