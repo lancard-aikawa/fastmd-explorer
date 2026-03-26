@@ -1818,6 +1818,11 @@ function bindImageViewer() {
   $('img-open-tab').addEventListener('click', () => {
     if (_imgPath) window.open(`/api/image?path=${encodeURIComponent(_imgPath)}`, '_blank', 'noreferrer');
   });
+  $('img-close').addEventListener('click', () => {
+    imageView.classList.add('hidden');
+    if (state.activeTabPath) showFileView();
+    else showEmptyState();
+  });
 
   // Scroll wheel zoom on stage
   imageStage.addEventListener('wheel', (e) => {
