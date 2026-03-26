@@ -1,4 +1,4 @@
-// MdExplorer — vanilla JS, no build step
+// fastmd-explorer — vanilla JS, no build step
 
 // ---- Mermaid init --------------------------------------------------------
 mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose' });

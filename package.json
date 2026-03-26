@@ -1,10 +1,10 @@
 {
-  "name": "mdexplorer",
+  "name": "fastmd-explorer",
   "version": "1.0.0",
   "description": "Lightweight Markdown file explorer and previewer",
   "type": "module",
   "bin": {
-    "mdexplorer": "./src/cli.js"
+    "fastmd-explorer": "./src/cli.js"
   },
   "scripts": {
     "start": "node src/cli.js",

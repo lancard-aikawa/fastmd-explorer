@@ -1,4 +1,4 @@
-# MdExplorer
+# fastmd-explorer
 
 ドキュメントファーストなリポジトリのための、軽量 Markdown ファイルエクスプローラー。
 フォルダを指定するだけで再帰的に `.md` ファイルを一覧表示し、GitHub ライクなプレビューを提供します。
@@ -10,8 +10,8 @@
 **動作要件:** Node.js 18 以上
 
 ```bash
-git clone https://github.com/yourname/MdExplorer.git
-cd MdExplorer
+git clone https://github.com/yourname/fastmd-explorer.git
+cd fastmd-explorer
 npm install
 ```
 
@@ -124,7 +124,7 @@ cp mdexplorer.config.json.sample mdexplorer.config.json
 ## ファイル構成
 
 ```
-MdExplorer/
+fastmd-explorer/
 ├── src/
 │   ├── cli.js               # エントリポイント
 │   ├── server.js            # Express サーバー・API

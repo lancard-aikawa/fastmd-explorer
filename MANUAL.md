@@ -1,4 +1,4 @@
-# MdExplorer 操作マニュアル
+# fastmd-explorer 操作マニュアル
 
 ローカルの Markdown ファイルをブラウザで閲覧・管理するツールです。
 

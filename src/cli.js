@@ -15,7 +15,7 @@ const app = createServer();
 
 app.listen(PORT, HOST, async () => {
   const local = `http://127.0.0.1:${PORT}`;
-  console.log(`\nMdExplorer`);
+  console.log(`\nfastmd-explorer`);
   console.log(`  local  →  ${local}`);
 
   if (MODE === 'lan') {
