@@ -37,6 +37,7 @@ const tagFilterBar   = $('tag-filter-bar');
 const warningBar     = $('warning-bar');
 const fileTree       = $('file-tree');
 const sidebarFooter  = $('sidebar-footer');
+const recentPanel    = $('recent-files-panel');
 const searchInput    = $('search-input');
 const btnFulltext    = $('btn-fulltext');
 const fulltextPanel  = $('fulltext-panel');
@@ -55,6 +56,12 @@ const tagsList       = $('tags-list');
 const tagInput       = $('tag-input');
 const noteInput      = $('note-input');
 const fileInfoBar    = $('file-info-bar');
+const findBar        = $('find-bar');
+const findInput      = $('find-input');
+const findCount      = $('find-count');
+const findPrev       = $('find-prev');
+const findNext       = $('find-next');
+const findClose      = $('find-close');
 const previewPanel   = $('preview-panel');
 const previewContent = $('preview-content');
 const outlinePanel   = $('outline-panel');
@@ -212,6 +219,52 @@ function populateHistory(history) {
     opt.title = h;
     historySelect.appendChild(opt);
   });
+}
+
+// ---- Recent files --------------------------------------------------------
+const RECENT_KEY = 'recentFiles';
+const RECENT_MAX = 10;
+
+function loadRecent() {
+  try { return JSON.parse(localStorage.getItem(RECENT_KEY)) ?? []; } catch { return []; }
+}
+
+function pushRecent(file) {
+  const list = loadRecent().filter((r) => r.path !== file.path);
+  list.unshift({ path: file.path, relativePath: file.relativePath, name: file.name, root: state.currentRoot });
+  localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, RECENT_MAX)));
+  renderRecentPanel();
+}
+
+function renderRecentPanel() {
+  const list = loadRecent().filter((r) => r.root === state.currentRoot);
+  recentPanel.innerHTML = '';
+  if (!list.length) return;
+
+  const header = document.createElement('div');
+  header.className = 'recent-header';
+  const collapsed = localStorage.getItem('recentCollapsed') === '1';
+  header.innerHTML = `<span>最近開いたファイル</span><span class="recent-toggle">${collapsed ? '▶' : '▼'}</span>`;
+  header.addEventListener('click', () => {
+    const isNowCollapsed = localStorage.getItem('recentCollapsed') === '1';
+    localStorage.setItem('recentCollapsed', isNowCollapsed ? '0' : '1');
+    renderRecentPanel();
+  });
+  recentPanel.appendChild(header);
+
+  if (!collapsed) {
+    const ul = document.createElement('div');
+    ul.className = 'recent-list';
+    list.forEach((r) => {
+      const item = document.createElement('div');
+      item.className = 'recent-item';
+      item.textContent = r.relativePath ?? r.name;
+      item.title = r.relativePath ?? r.name;
+      item.addEventListener('click', () => openFile(r));
+      ul.appendChild(item);
+    });
+    recentPanel.appendChild(ul);
+  }
 }
 
 // ---- File tree -----------------------------------------------------------
@@ -510,6 +563,7 @@ async function openFile(file) {
   state.tabs.push(tab);
   state.activeTabPath = file.path;
   state.isEditing = false;
+  pushRecent(file);
 
   renderTabBar();
   updateTreeActiveState();
@@ -527,6 +581,7 @@ async function renderFileContent(tab, highlight = null) {
   previewContent.innerHTML = '<div class="loading">レンダリング中...</div>';
   fileInfoBar.textContent = '';
   outlinePanel.innerHTML = '';
+  closeFindBar();
 
   try {
     const { html, mtime, charCount } = await get(`/api/preview?path=${encodeURIComponent(tab.path)}`);
@@ -534,6 +589,8 @@ async function renderFileContent(tab, highlight = null) {
     previewPanel.scrollTop = 0;
     await renderMermaid();
     fixLocalLinks();
+    addCopyButtons();
+    addTableSort();
     if (highlight) highlightInPreview(highlight);
     updateFileInfo(mtime, charCount);
     updateOutline();
@@ -716,6 +773,138 @@ function initMermaidZoom() {
   });
 }
 
+// ---- In-page find (Ctrl+F) -----------------------------------------------
+let _findMarks = [];
+let _findIdx = -1;
+
+function openFindBar() {
+  findBar.classList.remove('hidden');
+  findInput.focus();
+  findInput.select();
+}
+
+function closeFindBar() {
+  findBar.classList.add('hidden');
+  clearFindMarks();
+  findCount.textContent = '';
+}
+
+function clearFindMarks() {
+  _findMarks.forEach((m) => {
+    const parent = m.parentNode;
+    if (!parent) return;
+    parent.replaceChild(document.createTextNode(m.textContent), m);
+    parent.normalize();
+  });
+  _findMarks = [];
+  _findIdx = -1;
+}
+
+function runFind(q) {
+  clearFindMarks();
+  if (!q) { findCount.textContent = ''; return; }
+
+  const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+  const SKIP = new Set(['SCRIPT', 'STYLE', 'TEXTAREA', 'MARK']);
+
+  function walk(node) {
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      if (SKIP.has(node.tagName) || node.classList?.contains('mermaid')) return;
+      for (const child of Array.from(node.childNodes)) walk(child);
+    } else if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent;
+      re.lastIndex = 0;
+      if (!re.test(text)) return;
+      re.lastIndex = 0;
+      const frag = document.createDocumentFragment();
+      let last = 0;
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+        const mark = document.createElement('mark');
+        mark.className = 'find-hl';
+        mark.textContent = m[0];
+        _findMarks.push(mark);
+        frag.appendChild(mark);
+        last = m.index + m[0].length;
+      }
+      if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+      node.parentNode.replaceChild(frag, node);
+    }
+  }
+  walk(previewContent);
+
+  if (_findMarks.length) {
+    _findIdx = 0;
+    scrollToFindMark(0);
+  }
+  findCount.textContent = _findMarks.length ? `1 / ${_findMarks.length}` : '一致なし';
+}
+
+function scrollToFindMark(idx) {
+  _findMarks.forEach((m, i) => m.classList.toggle('find-hl-active', i === idx));
+  _findMarks[idx]?.scrollIntoView({ block: 'center' });
+  findCount.textContent = `${idx + 1} / ${_findMarks.length}`;
+}
+
+function findStep(dir) {
+  if (!_findMarks.length) return;
+  _findIdx = (_findIdx + dir + _findMarks.length) % _findMarks.length;
+  scrollToFindMark(_findIdx);
+}
+
+// ---- Table sort ----------------------------------------------------------
+function addTableSort() {
+  previewContent.querySelectorAll('table').forEach((table) => {
+    const ths = table.querySelectorAll('thead th');
+    if (!ths.length) return;
+    ths.forEach((th, colIdx) => {
+      th.style.cursor = 'pointer';
+      th.dataset.sortDir = '';
+      th.addEventListener('click', () => {
+        const dir = th.dataset.sortDir === 'asc' ? 'desc' : 'asc';
+        ths.forEach((t) => { t.dataset.sortDir = ''; t.classList.remove('sort-asc', 'sort-desc'); });
+        th.dataset.sortDir = dir;
+        th.classList.add(dir === 'asc' ? 'sort-asc' : 'sort-desc');
+
+        const tbody = table.querySelector('tbody');
+        if (!tbody) return;
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        rows.sort((a, b) => {
+          const aText = a.cells[colIdx]?.textContent.trim() ?? '';
+          const bText = b.cells[colIdx]?.textContent.trim() ?? '';
+          const aNum = parseFloat(aText);
+          const bNum = parseFloat(bText);
+          const cmp = (!isNaN(aNum) && !isNaN(bNum))
+            ? aNum - bNum
+            : aText.localeCompare(bText, 'ja');
+          return dir === 'asc' ? cmp : -cmp;
+        });
+        rows.forEach((r) => tbody.appendChild(r));
+      });
+    });
+  });
+}
+
+function addCopyButtons() {
+  previewContent.querySelectorAll('pre > code').forEach((code) => {
+    const pre = code.parentElement;
+    if (pre.querySelector('.copy-btn')) return; // already added
+    const btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.textContent = 'コピー';
+    btn.title = 'コードをコピー';
+    btn.addEventListener('click', () => {
+      navigator.clipboard.writeText(code.innerText).then(() => {
+        btn.textContent = '✓';
+        setTimeout(() => { btn.textContent = 'コピー'; }, 1500);
+      });
+    });
+    pre.style.position = 'relative';
+    pre.appendChild(btn);
+  });
+}
+
 function fixLocalLinks() {
   previewContent.querySelectorAll('a[href]').forEach((a) => {
     const href = a.getAttribute('href');
@@ -791,6 +980,8 @@ async function exitEditMode(reload = false) {
         previewPanel.scrollTop = 0;
         await renderMermaid();
         fixLocalLinks();
+        addCopyButtons();
+        addTableSort();
       } catch { /* ignore */ }
     }
   }
@@ -1163,6 +1354,7 @@ function applySearch(query) {
 
   const total = items.length;
   sidebarFooter.textContent = isFiltering ? `${visible} / ${total} ファイル` : `${total} ファイル`;
+  renderRecentPanel();
 }
 
 // ---- File management -----------------------------------------------------
@@ -1448,13 +1640,18 @@ function handleKey(e) {
   const mod = e.ctrlKey || e.metaKey;
   if (!mod) {
     if (e.key === 'Escape') {
-      if (state.isEditing) exitEditMode(false);
+      if (!findBar.classList.contains('hidden')) { closeFindBar(); }
+      else if (state.isEditing) { exitEditMode(false); }
       else if (searchInput.value) { searchInput.value = ''; applySearch(''); }
     }
     return;
   }
   if (e.key === 'r') { e.preventDefault(); btnRefresh.click(); }
-  if (e.key === 'f') { e.preventDefault(); searchInput.focus(); searchInput.select(); }
+  if (e.key === 'f') {
+    e.preventDefault();
+    if (state.activeTabPath && !state.isEditing) { openFindBar(); }
+    else { searchInput.focus(); searchInput.select(); }
+  }
   if (e.key === 'g') { e.preventDefault(); toggleFulltextPanel(); }
   if (e.key === 's' && state.isEditing) { e.preventDefault(); saveFile(); }
   if (e.key === 'e' && !state.isEditing && state.activeTabPath) { e.preventDefault(); enterEditMode(); }
@@ -1506,6 +1703,16 @@ function bindEvents() {
 
   btnFlag.addEventListener('click',    toggleFlag);
   btnPrint.addEventListener('click', () => window.print());
+
+  // Find bar
+  findInput.addEventListener('input', () => runFind(findInput.value.trim()));
+  findInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); findStep(e.shiftKey ? -1 : 1); }
+    if (e.key === 'Escape') { e.preventDefault(); closeFindBar(); }
+  });
+  findPrev.addEventListener('click', () => findStep(-1));
+  findNext.addEventListener('click', () => findStep(1));
+  findClose.addEventListener('click', closeFindBar);
   btnEdit.addEventListener('click',    enterEditMode);
   btnSave.addEventListener('click',    saveFile);
   btnDiscard.addEventListener('click', () => { state.tabDirty[state.activeTabPath] = false; delete state.tabEditorText[state.activeTabPath]; renderTabBar(); exitEditMode(false); });

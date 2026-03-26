@@ -69,6 +69,7 @@
         <div id="file-tree-wrap">
           <div id="file-tree"></div>
         </div>
+        <div id="recent-files-panel"></div>
         <div id="sidebar-footer"></div>
       </aside>
 
@@ -124,6 +125,15 @@
               placeholder="メモ..."
               autocomplete="off"
             >
+          </div>
+
+          <!-- In-page search bar -->
+          <div id="find-bar" class="hidden">
+            <input type="text" id="find-input" placeholder="ページ内検索..." autocomplete="off" spellcheck="false">
+            <span id="find-count"></span>
+            <button id="find-prev" title="前へ">↑</button>
+            <button id="find-next" title="次へ">↓</button>
+            <button id="find-close" title="閉じる (Esc)">✕</button>
           </div>
 
           <!-- Preview + Outline -->

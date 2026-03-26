@@ -349,6 +349,34 @@ select { cursor: pointer; }
   padding: 4px 0;
 }
 
+#recent-files-panel {
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.recent-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 10px;
+  font-size: 0.72em;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+}
+.recent-header:hover { background: rgba(128,128,128,0.08); }
+.recent-toggle { font-size: 0.85em; opacity: 0.7; }
+.recent-list { overflow-y: auto; max-height: 140px; }
+.recent-item {
+  padding: 3px 12px;
+  font-size: 0.78em;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.recent-item:hover { background: rgba(128,128,128,0.1); color: var(--accent); }
+
 #sidebar-footer {
   padding: 4px 10px;
   font-size: 0.7em;
@@ -737,7 +765,24 @@ select { cursor: pointer; }
   padding: 14px 16px;
   overflow-x: auto;
   margin-bottom: 1em;
+  position: relative;
 }
+.copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 2px 8px;
+  font-size: 0.72em;
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-dim);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.markdown-body pre:hover .copy-btn { opacity: 1; }
+.copy-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
 .markdown-body pre code {
   background: transparent;
   border: none;
@@ -766,7 +811,14 @@ select { cursor: pointer; }
   padding: 6px 12px;
   text-align: left;
 }
-.markdown-body th { background: var(--bg-sidebar); font-weight: 600; }
+.markdown-body th {
+  background: var(--bg-sidebar);
+  font-weight: 600;
+  user-select: none;
+}
+.markdown-body th.sort-asc::after  { content: ' ↑'; opacity: 0.6; }
+.markdown-body th.sort-desc::after { content: ' ↓'; opacity: 0.6; }
+.markdown-body th:hover { background: rgba(128,128,128,0.15); }
 .markdown-body tr:nth-child(even) td { background: rgba(128,128,128,0.04); }
 
 .markdown-body a { color: var(--accent); text-decoration: none; }
@@ -956,6 +1008,54 @@ mark.hl-search {
   color: #fff;
 }
 
+/* ---- Find bar ------------------------------------------------------------- */
+#find-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: var(--bg-sidebar);
+  border-bottom: 1px solid var(--border);
+}
+#find-bar.hidden { display: none; }
+#find-input {
+  flex: 1;
+  max-width: 260px;
+  padding: 3px 7px;
+  font-size: 0.85em;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+}
+#find-count {
+  font-size: 0.78em;
+  color: var(--text-dim);
+  min-width: 60px;
+}
+#find-bar button {
+  padding: 2px 7px;
+  font-size: 0.8em;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: var(--text);
+}
+#find-bar button:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+mark.find-hl {
+  background: #ffe066;
+  color: #333;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+mark.find-hl-active {
+  background: #f90;
+  color: #000;
+}
+[data-theme="dark"] mark.find-hl { background: #b8860b; color: #fff; }
+[data-theme="dark"] mark.find-hl-active { background: #e6a800; color: #000; }
+
 /* ---- File info bar -------------------------------------------------------- */
 #file-info-bar {
   font-size: 0.75em;
@@ -1030,7 +1130,7 @@ mark.hl-search {
 /* ---- Print ---------------------------------------------------------------- */
 @media print {
   #header, #sidebar, #resize-handle, #tab-bar,
-  #file-actions, #tags-bar, #note-bar, #file-info-bar,
+  #file-actions, #tags-bar, #note-bar, #file-info-bar, #find-bar,
   #outline-panel, #warning-bar, #drop-overlay { display: none !important; }
   #main { display: block; }
   #content { overflow: visible; }
