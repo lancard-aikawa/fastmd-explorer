@@ -327,10 +327,18 @@ export function createServer() {
     const targetPath = req.query.path;
     if (!targetPath || !currentRoot) return res.status(400).json({ error: 'path またはフォルダが未設定です' });
 
-    // Build patterns to search: the filename and the relativePath (both with/without .md)
     const targetRel  = relative(currentRoot, normalize(targetPath)).replace(/\\/g, '/');
     const targetName = targetRel.split('/').pop();         // e.g. "note.md"
     const targetBase = targetName.replace(/\.md$/i, '');  // e.g. "note"
+
+    // Match only actual Markdown link / Wiki-link syntax:
+    //   [label](note.md)  [label](path/note.md)  [[note]]  [[note.md]]
+    const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const linkRe = new RegExp(
+      `\\[\\[${escRe(targetBase)}(?:\\.md)?\\]\\]` +          // [[note]] or [[note.md]]
+      `|\\]\\((?:[^)]*\\/)?${escRe(targetBase)}(?:\\.md)?\\)`, // ](note.md) or ](path/note.md)
+      'i'
+    );
 
     const links = [];
     async function walk(dir) {
@@ -347,15 +355,13 @@ export function createServer() {
         try { content = await readFile(fullPath, 'utf8'); } catch { continue; }
         const lines = content.split('\n');
         for (let i = 0; i < lines.length; i++) {
-          const line = lines[i];
-          // Match [[note]] [[note.md]] [text](note.md) [text](path/note.md) etc.
-          if (line.includes(targetBase) || line.includes(targetRel)) {
+          if (linkRe.test(lines[i])) {
             links.push({
               path: fullPath,
               relativePath: relative(currentRoot, fullPath).replace(/\\/g, '/'),
               name: entry.name,
               lineNum: i + 1,
-              text: line.trim().slice(0, 120),
+              text: lines[i].trim().slice(0, 120),
             });
             break; // one entry per file
           }
