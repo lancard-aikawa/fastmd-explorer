@@ -44,6 +44,30 @@ marked.use({
   },
 });
 
+// Wikilink extension: [[note]] or [[note|alias]] → <a href="note.md" class="wikilink">
+marked.use({
+  extensions: [{
+    name: 'wikilink',
+    level: 'inline',
+    start(src) { return src.indexOf('[['); },
+    tokenizer(src) {
+      const match = src.match(/^\[\[([^\]|#\n]+?)(?:\|([^\]\n]+))?\]\]/);
+      if (match) {
+        return {
+          type: 'wikilink',
+          raw: match[0],
+          target: match[1].trim(),
+          label: (match[2] ?? match[1]).trim(),
+        };
+      }
+    },
+    renderer(token) {
+      const href = /\.md$/i.test(token.target) ? token.target : token.target + '.md';
+      return `<a href="${escHtml(href)}" class="wikilink">${escHtml(token.label)}</a>`;
+    },
+  }],
+});
+
 function escHtml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -135,7 +159,7 @@ export function createServer() {
 
     const warnings = detectFsCrossing(folderPath);
     currentRoot = folderPath;
-    invalidateCache(folderPath);
+    invalidateCache(folderPath); // soft: keep disk cache for fast reload after restart
     const config = await addFolderToHistory(folderPath);
 
     res.json({ path: folderPath, warnings, config });
@@ -145,11 +169,17 @@ export function createServer() {
   app.get('/api/files', async (_req, res) => {
     if (!currentRoot) return res.status(400).json({ error: 'フォルダが未選択です' });
     try {
+      const t0 = performance.now();
       const [{ tree, fileCount, warnings }, tags] = await Promise.all([
         scanMarkdownFiles(currentRoot),
         loadTags(currentRoot),
       ]);
-      res.json({ tree, fileCount, warnings, tags });
+      const t1 = performance.now();
+      console.log(`[perf] scan+tags: ${(t1 - t0).toFixed(0)}ms  files=${fileCount}`);
+      const json = JSON.stringify({ tree, fileCount, warnings, tags });
+      const t2 = performance.now();
+      console.log(`[perf] JSON.stringify: ${(t2 - t1).toFixed(0)}ms  size=${(json.length / 1024).toFixed(0)}KB`);
+      res.type('json').send(json);
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -289,7 +319,7 @@ export function createServer() {
     try {
       await access(filePath).then(() => { throw new Error('同名のファイルが既に存在します'); }).catch((e) => { if (e.code !== 'ENOENT') throw e; });
       await writeFile(filePath, '', 'utf8');
-      invalidateCache(currentRoot);
+      invalidateCache(currentRoot, { hard: true });
       res.json({ path: filePath });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
@@ -303,7 +333,7 @@ export function createServer() {
     try {
       await access(folderPath).then(() => { throw new Error('同名のフォルダが既に存在します'); }).catch((e) => { if (e.code !== 'ENOENT') throw e; });
       await mkdir(folderPath);
-      invalidateCache(currentRoot);
+      invalidateCache(currentRoot, { hard: true });
       res.json({ path: folderPath });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
@@ -321,7 +351,7 @@ export function createServer() {
         return res.status(409).json({ error: '同名のファイル/フォルダが既に存在します' });
       } catch (e) { if (e.code !== 'ENOENT') throw e; }
       await rename(normalize(oldPath), normalize(newPath));
-      invalidateCache(currentRoot);
+      invalidateCache(currentRoot, { hard: true });
       // タグのキーも旧パス→新パスに移動
       if (currentRoot) {
         const oldRel = relative(currentRoot, normalize(oldPath));
@@ -340,7 +370,7 @@ export function createServer() {
     try {
       const s = await stat(normalize(filePath));
       await rm(normalize(filePath), { recursive: s.isDirectory(), force: true });
-      invalidateCache(currentRoot);
+      invalidateCache(currentRoot, { hard: true });
       res.json({ ok: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
@@ -461,7 +491,7 @@ export function createServer() {
 
   // POST /api/refresh
   app.post('/api/refresh', (_req, res) => {
-    if (currentRoot) invalidateCache(currentRoot);
+    if (currentRoot) invalidateCache(currentRoot, { hard: true }); // force fresh scan + update disk cache
     res.json({ ok: true });
   });
 

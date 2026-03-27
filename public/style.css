@@ -601,6 +601,20 @@ select { cursor: pointer; }
 
 #file-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
 
+#nav-buttons { display: flex; gap: 2px; flex-shrink: 0; }
+#nav-buttons button {
+  padding: 2px 7px;
+  font-size: 0.85em;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
+  line-height: 1.4;
+}
+#nav-buttons button:hover:not(:disabled) { background: var(--hover); }
+#nav-buttons button:disabled { opacity: 0.3; cursor: default; }
+
 #btn-flag {
   font-size: 17px;
   padding: 2px 6px;
@@ -1239,6 +1253,13 @@ mark.find-hl-active {
   text-underline-offset: 2px;
 }
 .bl-link:hover { opacity: 0.75; }
+
+/* ---- Wikilinks ------------------------------------------------------------ */
+.markdown-body a.wikilink {
+  color: var(--accent);
+  text-decoration: underline dotted;
+}
+.markdown-body a.wikilink:hover { text-decoration: underline; }
 
 /* ---- File info bar -------------------------------------------------------- */
 #file-info-bar {

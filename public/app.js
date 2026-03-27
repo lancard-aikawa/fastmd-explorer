@@ -14,10 +14,11 @@ const state = {
   filterFlagged:  false,
 
   // Tabs
-  tabs:           [],    // [{ path, relativePath, name }]
+  tabs:           [],    // [{ id, path, relativePath, name }]
   activeTabPath:  null,
   tabDirty:       {},    // { [path]: boolean }
   tabEditorText:  {},    // { [path]: string } — saved when switching away in edit mode
+  tabNavStacks:   {},    // { [tab.id]: { stack: [{path,name,relativePath},...], idx: number } }
   isEditing:      false,
   showImages:     localStorage.getItem('showImages') === '1',
 };
@@ -78,6 +79,8 @@ const editor         = $('editor');
 const hljsTheme      = $('hljs-theme');
 const sidebar        = $('sidebar');
 const resizeHandle   = $('resize-handle');
+const btnNavBack     = $('btn-nav-back');
+const btnNavFwd      = $('btn-nav-fwd');
 
 // ---- API helpers ---------------------------------------------------------
 async function api(method, path, body) {
@@ -180,7 +183,12 @@ async function openFolder(rawPath) {
 
     // Restore saved tab state for this folder
     const saved = loadTabState(res.path);
-    state.tabs = saved?.tabs ?? [];
+    state.tabNavStacks = {};
+    state.tabs = (saved?.tabs ?? []).map((t) => {
+      const tab = { id: ++_tabIdSeq, ...t };
+      state.tabNavStacks[tab.id] = { stack: [_navEntry(tab)], idx: 0 };
+      return tab;
+    });
     state.activeTabPath = saved?.activeTabPath ?? null;
     renderTabBar();
 
@@ -279,8 +287,13 @@ function renderRecentPanel() {
 async function refreshTree() {
   fileTree.innerHTML = '<div class="loading">読み込み中...</div>';
   sidebarFooter.textContent = 'スキャン中...';
+  const t0 = performance.now();
   try {
+    const t1 = performance.now();
     const data = await get('/api/files');
+    const t2 = performance.now();
+    console.log(`[perf] /api/files: ${(t2 - t1).toFixed(0)}ms  mdFiles=${data.fileCount}`);
+
     state.tags = data.tags ?? {};
 
     if (data.warnings?.length) {
@@ -294,9 +307,22 @@ async function refreshTree() {
       return;
     }
 
+    // Reconstruct absolute `path` from currentRoot + name (stripped server-side to reduce JSON size)
+    const sep = state.currentRoot?.includes('\\') ? '\\' : '/';
+    function restorePaths(node) {
+      const rel = node.relativePath ?? node.name;
+      node.path = (rel === '.' || rel === '') ? state.currentRoot : state.currentRoot + sep + rel.replace(/\//g, sep);
+      if (node.children) node.children.forEach(restorePaths);
+    }
+    restorePaths(data.tree);
+
     renderTreeNode(data.tree, fileTree, false);
+    const t3 = performance.now();
+    console.log(`[perf] renderTree: ${(t3 - t2).toFixed(0)}ms`);
+
     renderTagFilterBar();
     applySearch(state.searchQuery);
+    console.log(`[perf] refreshTree total: ${(performance.now() - t0).toFixed(0)}ms`);
   } catch (err) {
     fileTree.innerHTML = `<div class="error-msg">エラー: ${err.message}</div>`;
   }
@@ -466,6 +492,26 @@ function miniChip(tag) {
 
 // ---- Tabs ----------------------------------------------------------------
 
+let _tabIdSeq = 0;
+
+function _navEntry(file) {
+  return { path: file.path, name: file.name, relativePath: file.relativePath };
+}
+
+function _initTabNav(tab) {
+  if (!tab.id) tab.id = ++_tabIdSeq;
+  if (!state.tabNavStacks[tab.id]) {
+    state.tabNavStacks[tab.id] = { stack: [_navEntry(tab)], idx: 0 };
+  }
+}
+
+function updateNavButtons() {
+  const tab = activeTab();
+  const nav = tab ? state.tabNavStacks[tab.id] : null;
+  btnNavBack.disabled = !nav || nav.idx <= 0;
+  btnNavFwd.disabled  = !nav || nav.idx >= nav.stack.length - 1;
+}
+
 function activeTab() {
   return state.tabs.find((t) => t.path === state.activeTabPath) ?? null;
 }
@@ -531,6 +577,7 @@ async function switchToTab(path, highlight = null) {
 
   renderTabBar();
   updateTreeActiveState();
+  updateNavButtons();
 
   const tab = state.tabs.find((t) => t.path === path);
   if (!tab) return;
@@ -545,6 +592,8 @@ async function closeTab(path) {
     if (!confirm(`"${state.tabs[idx].name}" に未保存の変更があります。閉じますか？`)) return;
   }
 
+  const closedTab = state.tabs[idx];
+  if (closedTab?.id) delete state.tabNavStacks[closedTab.id];
   state.tabs.splice(idx, 1);
   delete state.tabDirty[path];
   delete state.tabEditorText[path];
@@ -574,6 +623,7 @@ function closeAllTabs() {
   state.activeTabPath = null;
   state.tabDirty = {};
   state.tabEditorText = {};
+  state.tabNavStacks = {};
   state.isEditing = false;
   renderTabBar();
   updateTreeActiveState();
@@ -595,7 +645,8 @@ async function openFile(file) {
   }
 
   // Add new tab
-  const tab = { path: file.path, relativePath: file.relativePath, name: file.name };
+  const tab = { id: ++_tabIdSeq, path: file.path, relativePath: file.relativePath, name: file.name };
+  state.tabNavStacks[tab.id] = { stack: [_navEntry(file)], idx: 0 };
   state.tabs.push(tab);
   state.activeTabPath = file.path;
   state.isEditing = false;
@@ -633,6 +684,7 @@ async function renderFileContent(tab, highlight = null) {
     updateFileInfo(mtime, charCount);
     updateOutline();
     updateBacklinks(tab.path);
+    updateNavButtons();
   } catch (err) {
     previewContent.innerHTML = `<div class="error-msg">エラー: ${escHtml(err.message)}</div>`;
   }
@@ -981,12 +1033,75 @@ function fixLocalLinks() {
         const sep = state.currentRoot?.includes('\\') ? '\\' : '/';
         const resolvedNative = resolved.replace(/\//g, sep);
         const rel = resolved.replace((state.currentRoot ?? '').replace(/\\/g, '/') + '/', '');
-        openFile({ path: resolvedNative, relativePath: rel, name: href.split('/').pop() });
+        navigateInTab({ path: resolvedNative, relativePath: rel, name: href.split('/').pop() });
       } else {
         window.open(href, '_blank', 'noreferrer');
       }
     });
   });
+}
+
+// ---- In-tab navigation history -------------------------------------------
+
+async function navigateInTab(file) {
+  const tab = activeTab();
+  // No active tab → open normally
+  if (!tab) { await openFile(file); return; }
+  // Already showing this file → nothing to do
+  if (tab.path === file.path) return;
+
+  _initTabNav(tab);
+  const nav = state.tabNavStacks[tab.id];
+
+  // Truncate forward history and push new entry
+  nav.stack.splice(nav.idx + 1);
+  nav.stack.push(_navEntry(file));
+  nav.idx++;
+
+  await _navApply(tab, nav, file);
+}
+
+async function navBack() {
+  const tab = activeTab();
+  if (!tab) return;
+  _initTabNav(tab);
+  const nav = state.tabNavStacks[tab.id];
+  if (nav.idx <= 0) return;
+  nav.idx--;
+  await _navApply(tab, nav, nav.stack[nav.idx]);
+}
+
+async function navForward() {
+  const tab = activeTab();
+  if (!tab) return;
+  _initTabNav(tab);
+  const nav = state.tabNavStacks[tab.id];
+  if (nav.idx >= nav.stack.length - 1) return;
+  nav.idx++;
+  await _navApply(tab, nav, nav.stack[nav.idx]);
+}
+
+async function _navApply(tab, nav, file) {
+  const oldPath = tab.path;
+
+  // Move dirty marker; discard unsaved editor text
+  if (state.tabDirty[oldPath]) {
+    state.tabDirty[file.path] = state.tabDirty[oldPath];
+    delete state.tabDirty[oldPath];
+  }
+  delete state.tabEditorText[oldPath];
+
+  tab.path = file.path;
+  tab.name = file.name;
+  tab.relativePath = file.relativePath;
+  state.activeTabPath = file.path;
+  state.isEditing = false;
+
+  pushRecent(file);
+  renderTabBar();
+  updateTreeActiveState();
+  updateNavButtons();
+  await renderFileContent(tab);
 }
 
 // ---- Editor toolbar ------------------------------------------------------
@@ -1771,6 +1886,8 @@ function showEmptyState() {
   fileView.classList.add('hidden');
   imageView.classList.add('hidden');
   emptyState.classList.remove('hidden');
+  btnNavBack.disabled = true;
+  btnNavFwd.disabled  = true;
 }
 
 // ---- Image viewer --------------------------------------------------------
@@ -1878,6 +1995,11 @@ function initResize() {
 // ---- Keyboard shortcuts --------------------------------------------------
 function handleKey(e) {
   const mod = e.ctrlKey || e.metaKey;
+  // Alt+Arrow for back/forward (must be before !mod early return)
+  if (e.altKey && !mod) {
+    if (e.key === 'ArrowLeft')  { e.preventDefault(); navBack(); return; }
+    if (e.key === 'ArrowRight') { e.preventDefault(); navForward(); return; }
+  }
   if (!mod) {
     if (e.key === 'Escape') {
       if (!findBar.classList.contains('hidden')) { closeFindBar(); }
@@ -1941,6 +2063,8 @@ function bindEvents() {
   });
   fontSizeLabel.addEventListener('click', () => applyFontSize(FONT_DEFAULT));
 
+  btnNavBack.addEventListener('click', navBack);
+  btnNavFwd.addEventListener('click',  navForward);
   btnFlag.addEventListener('click',    toggleFlag);
   btnPrint.addEventListener('click', () => window.print());
 
