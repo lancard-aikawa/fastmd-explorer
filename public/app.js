@@ -79,6 +79,7 @@ const editor         = $('editor');
 const hljsTheme      = $('hljs-theme');
 const sidebar        = $('sidebar');
 const resizeHandle   = $('resize-handle');
+const btnFullview    = $('btn-fullview');
 const btnNavBack     = $('btn-nav-back');
 const btnNavFwd      = $('btn-nav-fwd');
 
@@ -140,6 +141,13 @@ function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   hljsTheme.href = theme === 'dark' ? '/vendor/hljs-dark.css' : '/vendor/hljs-light.css';
   mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: theme === 'dark' ? 'dark' : 'default' });
+}
+
+// ---- Full view mode -------------------------------------------------------
+function toggleFullview() {
+  const on = document.body.classList.toggle('fullview');
+  btnFullview.textContent = on ? '⤡' : '⤢';
+  btnFullview.title = on ? 'フル表示を終了 (Ctrl+Shift+F)' : 'フル表示 (Ctrl+Shift+F)';
 }
 
 // ---- Folder selection ----------------------------------------------------
@@ -724,8 +732,12 @@ async function updateBacklinks(filePath) {
 
 function updateOutline() {
   outlinePanel.innerHTML = '';
+  outlinePanel.classList.remove('collapsed');
 
-  // 折り畳みストリップ（常に表示）
+  const headings = [...previewContent.querySelectorAll('h1,h2,h3,h4')];
+  if (!headings.length) return;  // :empty CSS で自動的に非表示
+
+  // 折り畳みストリップ（見出しがある場合のみ表示）
   const strip = document.createElement('div');
   strip.className = 'outline-strip';
   const collapsed = localStorage.getItem('outlineCollapsed') === '1';
@@ -739,9 +751,6 @@ function updateOutline() {
     strip.title = outlinePanel.classList.contains('collapsed') ? 'アウトラインを開く' : 'アウトラインを閉じる';
   });
   outlinePanel.appendChild(strip);
-
-  const headings = [...previewContent.querySelectorAll('h1,h2,h3,h4')];
-  if (!headings.length) return;
 
   headings.forEach((h) => {
     const level = parseInt(h.tagName[1]);
@@ -2009,6 +2018,7 @@ function handleKey(e) {
     return;
   }
   if (e.key === 'r') { e.preventDefault(); btnRefresh.click(); }
+  if (e.key === 'F' && e.shiftKey) { e.preventDefault(); toggleFullview(); return; }
   if (e.key === 'f') {
     e.preventDefault();
     if (state.activeTabPath && !state.isEditing) { openFindBar(); }
@@ -2066,6 +2076,7 @@ function bindEvents() {
   btnNavBack.addEventListener('click', navBack);
   btnNavFwd.addEventListener('click',  navForward);
   btnFlag.addEventListener('click',    toggleFlag);
+  btnFullview.addEventListener('click', toggleFullview);
   btnPrint.addEventListener('click', () => window.print());
 
   // Find bar

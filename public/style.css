@@ -110,6 +110,8 @@ select { cursor: pointer; }
   padding: 0 12px;
   flex-shrink: 0;
   border-bottom: 1px solid #000;
+  overflow: hidden;
+  transition: height 0.2s ease, padding 0.2s ease, border-width 0.2s ease;
 }
 
 .logo {
@@ -259,6 +261,7 @@ select { cursor: pointer; }
   flex-direction: column;
   flex-shrink: 0;
   overflow: hidden;
+  transition: width 0.2s ease, min-width 0.2s ease;
 }
 
 #sidebar-top {
@@ -1331,6 +1334,60 @@ mark.find-hl-active {
 .outline-h2 { padding-left: 12px; }
 .outline-h3 { padding-left: 22px; }
 .outline-h4 { padding-left: 32px; font-size: 0.78em; }
+
+/* ---- Full view mode ------------------------------------------------------- */
+body.fullview #header {
+  height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom-width: 0;
+}
+body.fullview #sidebar,
+body.fullview #resize-handle {
+  width: 0 !important;
+  min-width: 0 !important;
+}
+body.fullview #outline-panel {
+  display: none !important;
+}
+body.fullview .markdown-body {
+  max-width: none;
+}
+body.fullview #tab-bar,
+body.fullview #file-info-bar,
+body.fullview #backlinks-bar,
+body.fullview #tags-bar,
+body.fullview #note-bar {
+  display: none !important;
+}
+/* file-header は visibility で隠す（btn-fullview だけ visibility で復活させるため） */
+body.fullview #file-header {
+  visibility: hidden;
+  height: 0 !important;
+  min-height: 0 !important;
+  overflow: hidden;
+  padding: 0 !important;
+  border: none !important;
+}
+
+/* フル表示中は btn-fullview を右上に固定表示（親の visibility: hidden を上書き） */
+body.fullview #btn-fullview {
+  visibility: visible;
+  position: fixed;
+  top: 6px;
+  right: 8px;
+  z-index: 200;
+  opacity: 0.25;
+  transition: opacity 0.15s ease;
+}
+body.fullview #btn-fullview:hover {
+  opacity: 1;
+}
+
+#btn-fullview {
+  font-size: 16px;
+  padding: 3px 7px;
+}
 
 /* ---- Print ---------------------------------------------------------------- */
 @media print {
