@@ -34,6 +34,7 @@ const btnFontDown    = $('btn-font-down');
 const btnFontUp      = $('btn-font-up');
 const fontSizeLabel  = $('font-size-label');
 const btnRefresh     = $('btn-refresh');
+const btnTreeRefresh = $('btn-tree-refresh');
 const btnTheme       = $('btn-theme');
 const tagFilterBar   = $('tag-filter-bar');
 const warningBar     = $('warning-bar');
@@ -2055,11 +2056,13 @@ function bindEvents() {
     if (val) { folderInput.value = val; openFolder(val); historySelect.value = ''; }
   });
 
-  btnRefresh.addEventListener('click', async () => {
+  const doTreeRefresh = async () => {
     if (!state.currentRoot) return;
     await post('/api/refresh');
     await refreshTree();
-  });
+  };
+  btnRefresh.addEventListener('click', doTreeRefresh);
+  btnTreeRefresh.addEventListener('click', doTreeRefresh);
 
   btnTheme.addEventListener('click', () => applyTheme(state.theme === 'light' ? 'dark' : 'light'));
 
