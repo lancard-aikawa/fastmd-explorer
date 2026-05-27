@@ -80,6 +80,7 @@ const editor         = $('editor');
 const hljsTheme      = $('hljs-theme');
 const sidebar        = $('sidebar');
 const resizeHandle   = $('resize-handle');
+const outlineResize  = $('outline-resize-handle');
 const btnFullview    = $('btn-fullview');
 const btnNavBack     = $('btn-nav-back');
 const btnNavFwd      = $('btn-nav-fwd');
@@ -738,7 +739,7 @@ function updateOutline() {
   const headings = [...previewContent.querySelectorAll('h1,h2,h3,h4')];
   if (!headings.length) return;  // :empty CSS で自動的に非表示
 
-  // 折り畳みストリップ（見出しがある場合のみ表示）
+  // 折り畳みストリップ（パネル全体の開閉）
   const strip = document.createElement('div');
   strip.className = 'outline-strip';
   const collapsed = localStorage.getItem('outlineCollapsed') === '1';
@@ -753,18 +754,72 @@ function updateOutline() {
   });
   outlinePanel.appendChild(strip);
 
-  headings.forEach((h) => {
-    const level = parseInt(h.tagName[1]);
-    const a = document.createElement('a');
-    a.className = `outline-item outline-h${level}`;
-    a.textContent = h.textContent;
-    a.href = '#';
-    a.addEventListener('click', (e) => {
-      e.preventDefault();
-      h.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-    outlinePanel.appendChild(a);
+  // 見出し階層メタ情報
+  const items = headings.map((h) => ({
+    el: h,
+    level: parseInt(h.tagName[1]),
+  }));
+  items.forEach((item, i) => {
+    const next = items[i + 1];
+    item.hasChildren = !!(next && next.level > item.level);
   });
+
+  // 折り畳み状態（ファイルを開き直すたびにリセット）
+  const foldedSet = new Set();
+
+  const listWrap = document.createElement('div');
+  listWrap.className = 'outline-list';
+  outlinePanel.appendChild(listWrap);
+
+  function render() {
+    listWrap.innerHTML = '';
+    let hideUntilLevel = null;
+    items.forEach((item, i) => {
+      if (hideUntilLevel !== null && item.level <= hideUntilLevel) {
+        hideUntilLevel = null;
+      }
+      if (hideUntilLevel !== null) return;
+
+      if (foldedSet.has(i) && item.hasChildren) {
+        hideUntilLevel = item.level;
+      }
+
+      const row = document.createElement('div');
+      row.className = `outline-item-row outline-h${item.level}`;
+
+      const toggle = document.createElement('span');
+      toggle.className = 'outline-toggle';
+      if (item.hasChildren) {
+        const folded = foldedSet.has(i);
+        toggle.textContent = folded ? '▶' : '▼';
+        toggle.title = folded ? '展開' : '折りたたみ';
+        toggle.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          ev.preventDefault();
+          if (foldedSet.has(i)) foldedSet.delete(i);
+          else foldedSet.add(i);
+          render();
+        });
+      } else {
+        toggle.classList.add('empty');
+      }
+      row.appendChild(toggle);
+
+      const a = document.createElement('a');
+      a.className = 'outline-item';
+      a.textContent = item.el.textContent;
+      a.href = '#';
+      a.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        item.el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      row.appendChild(a);
+
+      listWrap.appendChild(row);
+    });
+  }
+
+  render();
 }
 
 function highlightInPreview(q) {
@@ -2002,6 +2057,61 @@ function initResize() {
   const onUp   = ()  => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
 }
 
+// ---- Outline (ToC) resize -----------------------------------------------
+function initOutlineResize() {
+  if (!outlineResize) return;
+
+  // Restore saved manual width
+  const saved = localStorage.getItem('outlineWidth');
+  if (saved) {
+    document.documentElement.style.setProperty('--outline-width', saved + 'px');
+    document.body.classList.add('outline-manual');
+  }
+
+  // しきい値を超えてマウスが動いてから初めて「手動モード」に切替える。
+  // こうしないと単純クリック/ダブルクリックでもモードが切替わって幅がスナップしてしまう。
+  const DRAG_THRESHOLD = 4;
+  let startX = 0, startW = 0, dragging = false;
+
+  const onMove = (e) => {
+    if (!dragging) {
+      if (Math.abs(e.clientX - startX) < DRAG_THRESHOLD) return;
+      dragging = true;
+      document.body.classList.add('outline-manual', 'outline-resizing');
+    }
+    const maxW = Math.floor(window.innerWidth * 0.8);
+    const w = Math.max(160, Math.min(maxW, startW - (e.clientX - startX)));
+    document.documentElement.style.setProperty('--outline-width', w + 'px');
+  };
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    if (dragging) {
+      document.body.classList.remove('outline-resizing');
+      const w = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--outline-width'), 10);
+      if (!isNaN(w)) localStorage.setItem('outlineWidth', String(w));
+      dragging = false;
+    }
+  };
+
+  outlineResize.addEventListener('mousedown', (e) => {
+    if (outlinePanel.classList.contains('collapsed')) return;
+    startX = e.clientX;
+    startW = outlinePanel.getBoundingClientRect().width;
+    dragging = false;
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    e.preventDefault();
+  });
+
+  // Double-click → reset to auto-fill mode
+  outlineResize.addEventListener('dblclick', () => {
+    localStorage.removeItem('outlineWidth');
+    document.documentElement.style.removeProperty('--outline-width');
+    document.body.classList.remove('outline-manual');
+  });
+}
+
 // ---- Keyboard shortcuts --------------------------------------------------
 function handleKey(e) {
   const mod = e.ctrlKey || e.metaKey;
@@ -2147,6 +2257,7 @@ function bindEvents() {
   document.addEventListener('keydown', handleKey);
 
   initResize();
+  initOutlineResize();
   initDragDrop();
   bindImageViewer();
 }
