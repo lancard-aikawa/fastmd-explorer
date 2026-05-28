@@ -1,5 +1,5 @@
 # pnpm 11+ の設定ファイル (.npmrc では minimumReleaseAge 等は読まれない)
-#
+
 # サプライチェーン cooldown: 公開後 7 日未満のバージョンは解決対象外。
 # 単位は分。10080 = 7 日。
 # 緊急時は `pnpm add <pkg> --config.minimumReleaseAge=0` で個別上書き可能。
@@ -8,3 +8,8 @@ minimumReleaseAge: 10080
 # 例外パッケージはここに列挙する (パッケージ名・パターン・特定バージョン)
 # minimumReleaseAgeExclude:
 #   - '@myorg/*'
+
+# postinstall 等のビルドスクリプト実行を許可するパッケージ
+# (pnpm 11 はデフォルトで全てのネイティブビルドをブロックする)
+allowBuilds:
+  esbuild: true

@@ -34,6 +34,28 @@ pnpm start /path/to/your/docs
 
 ---
 
+## exe にビルドして配布
+
+Node.js を持っていない端末にも配布できる単一 exe をビルドできます。
+
+```bash
+pnpm run build
+```
+
+実行後、`dist/fastmd-explorer.exe` (Windows x64、約 64MB) が生成されます。
+exe をダブルクリックすると、Node.js が無くてもブラウザが立ち上がり利用できます。
+
+ビルドの仕組み:
+
+1. **bundle** (`pnpm run build:bundle`) — esbuild が ESM ソースを 1 ファイルの CJS にバンドル
+   (Top-level await の解消・`import.meta.url` のシム化はビルドスクリプトが対応)
+2. **exe** (`pnpm run build:exe`) — `@yao-pkg/pkg` が Node ランタイムとバンドル + アセット
+   (`public/`・mermaid・highlight.js テーマ等) を一つの exe にパッケージング
+
+> ビルド成果物の中間ファイル (`src/_bundle.cjs`、`src/.pkgrc.json`、`dist/`) は git 管理外です。
+
+---
+
 ## 設定
 
 プロジェクトルートに `mdexplorer.config.json` を作成して設定をカスタマイズできます。
