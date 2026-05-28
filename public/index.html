@@ -34,6 +34,7 @@
         <span id="font-size-label" title="クリックでリセット">16px</span>
         <button id="btn-font-up" title="文字を大きく">A+</button>
         <button id="btn-refresh" title="ファイルツリーを再読み込み (Ctrl+R)">↺</button>
+        <button id="btn-settings" title="設定とシステム情報">⚙</button>
         <button id="btn-theme" title="テーマ切替">◐</button>
       </div>
     </header>
@@ -201,6 +202,43 @@
       </div>
     </div>
 
+    <!-- Status bar -->
+    <footer id="status-bar">
+      <span id="status-port" title="起動ポート"></span>
+      <span class="status-sep">|</span>
+      <span id="status-folder" title="現在開いているフォルダ"></span>
+      <span class="status-sep">|</span>
+      <span id="status-pid" title="プロセス ID"></span>
+      <span class="status-sep">|</span>
+      <span id="status-uptime" title="サーバ稼働時間"></span>
+    </footer>
+
+  </div>
+
+  <!-- Settings panel (modal) -->
+  <div id="settings-panel" class="hidden">
+    <div class="settings-overlay"></div>
+    <div class="settings-content">
+      <div class="settings-header">
+        <h3>設定とシステム情報</h3>
+        <button id="btn-settings-close" title="閉じる">×</button>
+      </div>
+      <div class="settings-body">
+        <section>
+          <h4>サーバ</h4>
+          <dl id="settings-server"></dl>
+        </section>
+        <section>
+          <h4>プロセス</h4>
+          <dl id="settings-process"></dl>
+        </section>
+        <section>
+          <h4>設定ファイル</h4>
+          <dl id="settings-paths"></dl>
+          <p class="settings-hint">設定変更には設定ファイルを直接編集し、再起動が必要です。</p>
+        </section>
+      </div>
+    </div>
   </div>
 
   <!-- Drag & drop overlay -->
