@@ -4,3 +4,6 @@ mdexplorer.config.json
 sandbox/
 .server.pid
 server.log
+dist/
+src/_bundle.cjs
+src/.pkgrc.json

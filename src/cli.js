@@ -4,36 +4,40 @@ import { networkInterfaces } from 'os';
 import { createServer } from './server.js';
 import { loadConfig, loadLocalConfig, serverConfig } from './configManager.js';
 
-await Promise.all([loadLocalConfig(), loadConfig()]);
+async function main() {
+  await Promise.all([loadLocalConfig(), loadConfig()]);
 
-const cfg  = serverConfig();
-const PORT = parseInt(process.env.PORT    ?? cfg.port,    10);
-const MODE = (process.env.NETWORK ?? cfg.network ?? 'local').toLowerCase();
-const HOST = MODE === 'lan' ? '0.0.0.0' : '127.0.0.1';
+  const cfg  = serverConfig();
+  const PORT = parseInt(process.env.PORT    ?? cfg.port,    10);
+  const MODE = (process.env.NETWORK ?? cfg.network ?? 'local').toLowerCase();
+  const HOST = MODE === 'lan' ? '0.0.0.0' : '127.0.0.1';
 
-const app = createServer();
+  const app = createServer();
 
-app.listen(PORT, HOST, async () => {
-  const local = `http://127.0.0.1:${PORT}`;
-  console.log(`\nfastmd-explorer`);
-  console.log(`  local  →  ${local}`);
+  app.listen(PORT, HOST, async () => {
+    const local = `http://127.0.0.1:${PORT}`;
+    console.log(`\nfastmd-explorer`);
+    console.log(`  local  →  ${local}`);
 
-  if (MODE === 'lan') {
-    console.log('\n  ⚠  LAN モード: ネットワーク上の全デバイスからアクセス可能です');
-    getLanAddresses().forEach((ip) => {
-      console.log(`  lan    →  http://${ip}:${PORT}`);
-    });
-  }
+    if (MODE === 'lan') {
+      console.log('\n  ⚠  LAN モード: ネットワーク上の全デバイスからアクセス可能です');
+      getLanAddresses().forEach((ip) => {
+        console.log(`  lan    →  http://${ip}:${PORT}`);
+      });
+    }
 
-  console.log();
+    console.log();
 
-  if (!process.env.NO_OPEN) {
-    try {
-      const { default: open } = await import('open');
-      await open(local);
-    } catch { /* ignore */ }
-  }
-});
+    if (!process.env.NO_OPEN) {
+      try {
+        const { default: open } = await import('open');
+        await open(local);
+      } catch { /* ignore */ }
+    }
+  });
+}
+
+main();
 
 function getLanAddresses() {
   const addrs = [];
