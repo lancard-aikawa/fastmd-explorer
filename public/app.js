@@ -36,6 +36,13 @@ const fontSizeLabel  = $('font-size-label');
 const btnRefresh     = $('btn-refresh');
 const btnTreeRefresh = $('btn-tree-refresh');
 const btnTheme       = $('btn-theme');
+const btnSettings    = $('btn-settings');
+const settingsPanel  = $('settings-panel');
+const btnSettingsClose = $('btn-settings-close');
+const statusPort     = $('status-port');
+const statusFolder   = $('status-folder');
+const statusPid      = $('status-pid');
+const statusUptime   = $('status-uptime');
 const tagFilterBar   = $('tag-filter-bar');
 const warningBar     = $('warning-bar');
 const fileTree       = $('file-tree');
@@ -2260,6 +2267,89 @@ function bindEvents() {
   initOutlineResize();
   initDragDrop();
   bindImageViewer();
+  initStatusAndSettings();
+}
+
+// ---- Status bar & settings panel -----------------------------------------
+
+let _statusCache = null;
+
+function formatUptime(sec) {
+  if (sec == null) return '-';
+  if (sec < 60)   return `${sec}s`;
+  if (sec < 3600) return `${Math.floor(sec / 60)}m`;
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  return `${h}h${m}m`;
+}
+
+function shortPath(p, max = 60) {
+  if (!p) return '(未選択)';
+  if (p.length <= max) return p;
+  return '…' + p.slice(p.length - max + 1);
+}
+
+async function refreshStatus() {
+  try {
+    const res = await fetch('/api/status');
+    if (!res.ok) return;
+    _statusCache = await res.json();
+  } catch { /* ignore network errors */ }
+  renderStatusBar();
+  if (!settingsPanel.classList.contains('hidden')) renderSettingsPanel();
+}
+
+function renderStatusBar() {
+  if (!_statusCache) return;
+  const s = _statusCache;
+  statusPort.textContent   = `${s.host}:${s.port}${s.mode === 'lan' ? ' (LAN)' : ''}`;
+  statusFolder.textContent = `📂 ${shortPath(s.currentFolder)}`;
+  statusPid.textContent    = `PID ${s.pid}`;
+  statusUptime.textContent = `稼働 ${formatUptime(s.uptimeSec)}`;
+}
+
+function renderSettingsPanel() {
+  if (!_statusCache) return;
+  const s = _statusCache;
+  const dl = (rows) => rows.map(([k, v]) => `<dt>${k}</dt><dd>${v ?? '-'}</dd>`).join('');
+
+  $('settings-server').innerHTML = dl([
+    ['アドレス',     `${s.host}:${s.port}`],
+    ['ネットワーク', s.mode === 'lan' ? 'LAN 公開' : 'ローカルのみ'],
+    ['稼働時間',     formatUptime(s.uptimeSec)],
+    ['現在のフォルダ', s.currentFolder ?? '(未選択)'],
+  ]);
+  $('settings-process').innerHTML = dl([
+    ['PID',          s.pid],
+    ['Node',         s.nodeVersion],
+    ['プラットフォーム', `${s.platform} (${s.arch})`],
+    ['配布形式',     s.isPackaged ? 'exe (pkg)' : 'Node.js'],
+    ['実行ファイル', s.execPath],
+  ]);
+  $('settings-paths').innerHTML = dl([
+    ['設定ファイル',     s.configPath],
+    ['履歴ファイル',     s.globalConfigPath],
+  ]);
+}
+
+function openSettings() {
+  settingsPanel.classList.remove('hidden');
+  refreshStatus();
+}
+function closeSettings() {
+  settingsPanel.classList.add('hidden');
+}
+
+function initStatusAndSettings() {
+  btnSettings.addEventListener('click', openSettings);
+  btnSettingsClose.addEventListener('click', closeSettings);
+  settingsPanel.querySelector('.settings-overlay').addEventListener('click', closeSettings);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !settingsPanel.classList.contains('hidden')) closeSettings();
+  });
+
+  refreshStatus();
+  setInterval(refreshStatus, 10_000);
 }
 
 // ---- Drag & drop ---------------------------------------------------------

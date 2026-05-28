@@ -73,3 +73,7 @@ export async function addFolderToHistory(folderPath) {
 export function getConfig() {
   return _global ?? { history: [] };
 }
+
+export function getConfigPaths() {
+  return { localConfigPath: LOCAL_FILE, globalConfigPath: GLOBAL_FILE };
+}

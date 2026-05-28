@@ -2,7 +2,7 @@
 import { resolve } from 'path';
 import { networkInterfaces } from 'os';
 import { createServer } from './server.js';
-import { loadConfig, loadLocalConfig, serverConfig } from './configManager.js';
+import { loadConfig, loadLocalConfig, serverConfig, getConfigPaths } from './configManager.js';
 
 async function main() {
   await Promise.all([loadLocalConfig(), loadConfig()]);
@@ -12,7 +12,9 @@ async function main() {
   const MODE = (process.env.NETWORK ?? cfg.network ?? 'local').toLowerCase();
   const HOST = MODE === 'lan' ? '0.0.0.0' : '127.0.0.1';
 
-  const app = createServer();
+  const startedAt = Date.now();
+  const { localConfigPath, globalConfigPath } = getConfigPaths();
+  const app = createServer({ port: PORT, host: HOST, mode: MODE, startedAt, localConfigPath, globalConfigPath });
 
   app.listen(PORT, HOST, async () => {
     const local = `http://127.0.0.1:${PORT}`;

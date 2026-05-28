@@ -115,7 +115,7 @@ function isAllowedPath(filePath, currentRoot) {
 
 // ---- Server factory -------------------------------------------------------
 
-export function createServer() {
+export function createServer(meta = {}) {
   const app = express();
   app.use(express.json({ limit: '10mb' }));
 
@@ -142,6 +142,27 @@ export function createServer() {
     const config = getConfig();          // 履歴・lastFolder
     const srv    = serverConfig();       // port・network・theme (mdexplorer.config.json)
     res.json({ ...srv, ...config, currentRoot });
+  });
+
+  // GET /api/status
+  app.get('/api/status', (_req, res) => {
+    const srv = serverConfig();
+    res.json({
+      port:           meta.port ?? srv.port,
+      host:           meta.host ?? '127.0.0.1',
+      mode:           meta.mode ?? srv.network,
+      pid:            process.pid,
+      nodeVersion:    process.version,
+      platform:       process.platform,
+      arch:           process.arch,
+      startedAt:      meta.startedAt ?? null,
+      uptimeSec:      meta.startedAt ? Math.floor((Date.now() - meta.startedAt) / 1000) : null,
+      currentFolder:  currentRoot,
+      execPath:       process.execPath,
+      isPackaged:     !!process.pkg,
+      configPath:     meta.localConfigPath ?? null,
+      globalConfigPath: meta.globalConfigPath ?? null,
+    });
   });
 
   // POST /api/folder  { path }
