@@ -7,13 +7,16 @@
 
 ## インストール
 
-**動作要件:** Node.js 18 以上
+**動作要件:** Node.js 18 以上 / pnpm
 
 ```bash
 git clone https://github.com/yourname/fastmd-explorer.git
 cd fastmd-explorer
-npm install
+pnpm install
 ```
+
+> pnpm が未インストールの場合は `corepack enable` で有効化できます (Node.js 16.10 以上同梱)。
+> 本リポジトリは `package.json` の `packageManager` で pnpm バージョンを pin しています。
 
 ---
 
@@ -21,10 +24,10 @@ npm install
 
 ```bash
 # ブラウザを自動で開いて起動
-npm start
+pnpm start
 
 # 開くフォルダをあらかじめ指定
-npm start /path/to/your/docs
+pnpm start /path/to/your/docs
 ```
 
 起動後、ブラウザで `http://127.0.0.1:13847` が開きます。
@@ -50,7 +53,7 @@ cp mdexplorer.config.json.sample mdexplorer.config.json
 ```
 
 > `mdexplorer.config.json` は `.gitignore` 済みです。環境ごとに異なる設定を安全に持てます。
-> ポート・ネットワーク設定は環境変数でも上書きできます: `PORT=4000 NETWORK=lan npm start`
+> ポート・ネットワーク設定は環境変数でも上書きできます: `PORT=4000 NETWORK=lan pnpm start`
 
 ---
 
