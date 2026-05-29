@@ -1,6 +1,6 @@
 {
   "name": "fastmd-explorer",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Lightweight Markdown file explorer and previewer",
   "type": "module",
   "packageManager": "pnpm@11.1.3",
