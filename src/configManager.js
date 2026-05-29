@@ -70,6 +70,13 @@ export async function addFolderToHistory(folderPath) {
   return config;
 }
 
+export async function saveWindowBounds(bounds) {
+  const config = _global ?? await loadConfig();
+  config.windowBounds = bounds;
+  await saveConfig(config);
+  return config;
+}
+
 export function getConfig() {
   return _global ?? { history: [] };
 }

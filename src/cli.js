@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import { join } from 'path';
-import { networkInterfaces, tmpdir } from 'os';
+import { networkInterfaces, tmpdir, homedir } from 'os';
 import { existsSync, createWriteStream } from 'fs';
 import { spawn } from 'child_process';
 import { createServer } from './server.js';
-import { loadConfig, loadLocalConfig, serverConfig, getConfigPaths } from './configManager.js';
+import { loadConfig, loadLocalConfig, serverConfig, getConfigPaths, getConfig } from './configManager.js';
 
 // window モード: 単体ウィンドウ (ブラウザのアプリモード) で起動し、
 // ウィンドウを閉じるとプロセスごと終了する。
@@ -59,7 +59,7 @@ async function main() {
 
     if (process.env.NO_OPEN) return;
 
-    if (WINDOW_MODE && launchAppWindow(local)) return;
+    if (WINDOW_MODE && launchAppWindow(local, getConfig().windowBounds)) return;
 
     // 通常モード (またはアプリモード起動に失敗): 既定ブラウザのタブで開く
     try {
@@ -75,7 +75,7 @@ main();
  * Edge / Chrome を「アプリモード」(--app) で起動し、アドレスバーの無い
  * 単体ウィンドウを開く。見つかれば true、無ければ false を返す。
  */
-function launchAppWindow(url) {
+function launchAppWindow(url, bounds) {
   const pf   = process.env['ProgramFiles'] ?? '';
   const pf86 = process.env['ProgramFiles(x86)'] ?? '';
   const local = process.env['LOCALAPPDATA'] ?? '';
@@ -88,13 +88,38 @@ function launchAppWindow(url) {
     join(local,'Google', 'Chrome', 'Application', 'chrome.exe'),
   ];
 
+  // アプリ専用のブラウザプロファイルを使う。
+  // 理由: 既定プロファイルだと (1) ユーザーが普段 Edge を開いていると --app が
+  // 既存プロセスに相乗りしてウィンドウサイズが記憶/復元されない、
+  // (2) 既存セッションのサイズ記憶とも競合する。専用プロファイルなら常に独立
+  // プロセスで起動し、そのプロファイル内でブラウザがアプリウィンドウのサイズ・
+  // 位置を自前で記憶・復元する。localStorage (テーマ等) もここで永続化される。
+  //
+  // --disable-sync: 専用プロファイルに個人データが同期されるのを防ぐ
+  //   (Edge の「同期しています」通知も出なくなる)。
+  const profileDir = join(homedir(), '.mdexplorer', 'browser-profile');
+  const args = [
+    `--app=${url}`,
+    `--user-data-dir=${profileDir}`,
+    '--disable-sync',
+    '--no-first-run',
+    '--no-default-browser-check',
+  ];
+
+  // 前回保存したウィンドウの位置・サイズを明示復元する。
+  // 専用プロファイルは毎回独立プロセスで起動するため、これらの起動フラグが
+  // 確実に効く (ブラウザ任せの記憶は環境により効かないため明示指定する)。
+  if (bounds && Number.isFinite(bounds.width) && Number.isFinite(bounds.height)) {
+    args.push(`--window-size=${Math.round(bounds.width)},${Math.round(bounds.height)}`);
+    if (Number.isFinite(bounds.x) && Number.isFinite(bounds.y)) {
+      args.push(`--window-position=${Math.round(bounds.x)},${Math.round(bounds.y)}`);
+    }
+  }
+
   for (const exe of candidates) {
     if (!exe || !existsSync(exe)) continue;
     try {
-      const child = spawn(exe, [`--app=${url}`, '--window-size=1280,860'], {
-        detached: true,
-        stdio: 'ignore',
-      });
+      const child = spawn(exe, args, { detached: true, stdio: 'ignore' });
       child.unref();
       return true;
     } catch { /* 次の候補へ */ }

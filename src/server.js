@@ -15,7 +15,7 @@ import {
   setCachedHtml,
 } from './fileScanner.js';
 import { loadTags, updateFileTags, renameFileTags } from './tagManager.js';
-import { getConfig, addFolderToHistory, serverConfig } from './configManager.js';
+import { getConfig, addFolderToHistory, serverConfig, saveWindowBounds } from './configManager.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = dirname(__dirname);
@@ -205,9 +205,24 @@ export function createServer(meta = {}) {
       currentFolder:  currentRoot,
       execPath:       process.execPath,
       isPackaged:     !!process.pkg,
+      windowMode:     !!meta.windowMode,
       configPath:     meta.localConfigPath ?? null,
       globalConfigPath: meta.globalConfigPath ?? null,
     });
+  });
+
+  // POST /api/window-bounds  — ウィンドウの位置・サイズを保存 (window モードで復元用)
+  app.post('/api/window-bounds', async (req, res) => {
+    const b = req.body;
+    if (b && Number.isFinite(b.width) && Number.isFinite(b.height)) {
+      await saveWindowBounds({
+        width:  Math.round(b.width),
+        height: Math.round(b.height),
+        x: Number.isFinite(b.x) ? Math.round(b.x) : undefined,
+        y: Number.isFinite(b.y) ? Math.round(b.y) : undefined,
+      });
+    }
+    res.json({ ok: true });
   });
 
   // POST /api/folder  { path }
