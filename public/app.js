@@ -2350,6 +2350,19 @@ function initStatusAndSettings() {
 
   refreshStatus();
   setInterval(refreshStatus, 10_000);
+
+  initHeartbeat();
+}
+
+// サーバとの生存接続。window モードのサーバはこの接続が全て切れると
+// (= ウィンドウを閉じると) 自動終了する。EventSource は切断時に自動再接続
+// するため、リロード程度では終了しない。
+function initHeartbeat() {
+  try {
+    const es = new EventSource('/api/heartbeat');
+    // onerror 時はブラウザが自動で再接続するので明示処理は不要。
+    es.onerror = () => { /* auto-reconnect */ };
+  } catch { /* EventSource 非対応環境では何もしない */ }
 }
 
 // ---- Drag & drop ---------------------------------------------------------
