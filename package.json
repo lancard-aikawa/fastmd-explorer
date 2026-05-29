@@ -12,7 +12,8 @@
     "dev": "node --watch src/cli.js",
     "build:bundle": "node scripts/build-bundle.mjs",
     "build:exe": "pkg src/_bundle.cjs --targets node22-win-x64 --output dist/fastmd-explorer.exe",
-    "build": "pnpm run build:bundle && pnpm run build:exe"
+    "build:patch": "node scripts/patch-subsystem.mjs dist/fastmd-explorer.exe",
+    "build": "pnpm run build:bundle && pnpm run build:exe && pnpm run build:patch"
   },
   "pkg": {
     "assets": [

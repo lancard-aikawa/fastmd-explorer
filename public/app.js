@@ -112,7 +112,8 @@ const del   = (p, b) => api('DELETE', p, b);
 async function init() {
   try {
     const config = await get('/api/config');
-    state.theme = config.theme ?? 'light';
+    // localStorage のユーザー選択を最優先、無ければ config の既定値
+    state.theme = localStorage.getItem('theme') ?? config.theme ?? 'light';
     applyTheme(state.theme);
     initFontSize();
     populateHistory(config.history ?? []);
@@ -150,6 +151,7 @@ function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   hljsTheme.href = theme === 'dark' ? '/vendor/hljs-dark.css' : '/vendor/hljs-light.css';
   mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: theme === 'dark' ? 'dark' : 'default' });
+  localStorage.setItem('theme', theme); // ユーザーの選択を永続化 (再起動後も維持)
 }
 
 // ---- Full view mode -------------------------------------------------------
@@ -2350,6 +2352,51 @@ function initStatusAndSettings() {
 
   refreshStatus();
   setInterval(refreshStatus, 10_000);
+
+  initHeartbeat();
+  initWindowBounds();
+}
+
+// window モード時、アプリウィンドウの位置・サイズをサーバに保存する。
+// 次回起動時に cli.js が --window-size/--window-position で復元する
+// (専用プロファイル起動なのでこれらのフラグが確実に効く)。
+function initWindowBounds() {
+  const report = () => {
+    if (!_statusCache?.windowMode) return; // window モードのみ
+    const bounds = {
+      width:  window.outerWidth,
+      height: window.outerHeight,
+      x:      window.screenX,
+      y:      window.screenY,
+    };
+    const body = JSON.stringify(bounds);
+    // 閉じる瞬間でも確実に送るため sendBeacon を優先
+    try {
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon('/api/window-bounds', new Blob([body], { type: 'application/json' }));
+        return;
+      }
+    } catch { /* fall through */ }
+    post('/api/window-bounds', bounds);
+  };
+
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(report, 500);
+  });
+  window.addEventListener('pagehide', report);
+}
+
+// サーバとの生存接続。window モードのサーバはこの接続が全て切れると
+// (= ウィンドウを閉じると) 自動終了する。EventSource は切断時に自動再接続
+// するため、リロード程度では終了しない。
+function initHeartbeat() {
+  try {
+    const es = new EventSource('/api/heartbeat');
+    // onerror 時はブラウザが自動で再接続するので明示処理は不要。
+    es.onerror = () => { /* auto-reconnect */ };
+  } catch { /* EventSource 非対応環境では何もしない */ }
 }
 
 // ---- Drag & drop ---------------------------------------------------------

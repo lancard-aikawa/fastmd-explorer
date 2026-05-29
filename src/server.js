@@ -1,6 +1,7 @@
 import express from 'express';
-import { execSync } from 'child_process';
-import { readFileSync } from 'fs';
+import { execSync, execFileSync } from 'child_process';
+import { readFileSync, appendFileSync } from 'fs';
+import { tmpdir } from 'os';
 import { readFile, writeFile, stat, rename, mkdir, rm, access, readdir } from 'fs/promises';
 import { join, dirname, relative, normalize } from 'path';
 import { fileURLToPath } from 'url';
@@ -14,7 +15,7 @@ import {
   setCachedHtml,
 } from './fileScanner.js';
 import { loadTags, updateFileTags, renameFileTags } from './tagManager.js';
-import { getConfig, addFolderToHistory, serverConfig } from './configManager.js';
+import { getConfig, addFolderToHistory, serverConfig, saveWindowBounds } from './configManager.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = dirname(__dirname);
@@ -144,6 +145,50 @@ export function createServer(meta = {}) {
     res.json({ ...srv, ...config, currentRoot });
   });
 
+  // -- Heartbeat / lifecycle (window モード時のみ自動終了) --
+  // クライアントが SSE 接続を保持し、ウィンドウを閉じて接続が切れたら
+  // 数秒の猶予後に onIdle() を呼んでプロセスを終了させる。
+  // リロード/ナビゲーションは猶予内に再接続するため終了しない。
+  const sseClients = new Set();
+  let everConnected = false;
+  let idleTimer = null;
+  const IDLE_GRACE_MS = 2500;
+
+  app.get('/api/heartbeat', (req, res) => {
+    res.writeHead(200, {
+      'Content-Type':  'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection:      'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    res.write('retry: 1000\n\n');
+    sseClients.add(res);
+    everConnected = true;
+    if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+
+    const ping = setInterval(() => {
+      try { res.write(': ping\n\n'); } catch { /* ignore */ }
+    }, 15000);
+
+    req.on('close', () => {
+      clearInterval(ping);
+      sseClients.delete(res);
+      if (meta.windowMode && everConnected && sseClients.size === 0) {
+        idleTimer = setTimeout(() => {
+          if (sseClients.size === 0 && meta.onIdle) meta.onIdle();
+        }, IDLE_GRACE_MS);
+      }
+    });
+  });
+
+  // 起動後にウィンドウが開かない/接続されない場合のフェイルセーフ。
+  // ゾンビプロセス化を防ぐため、一定時間 1 度も接続が無ければ終了する。
+  if (meta.windowMode) {
+    setTimeout(() => {
+      if (!everConnected && meta.onIdle) meta.onIdle();
+    }, 60000);
+  }
+
   // GET /api/status
   app.get('/api/status', (_req, res) => {
     const srv = serverConfig();
@@ -160,9 +205,24 @@ export function createServer(meta = {}) {
       currentFolder:  currentRoot,
       execPath:       process.execPath,
       isPackaged:     !!process.pkg,
+      windowMode:     !!meta.windowMode,
       configPath:     meta.localConfigPath ?? null,
       globalConfigPath: meta.globalConfigPath ?? null,
     });
+  });
+
+  // POST /api/window-bounds  — ウィンドウの位置・サイズを保存 (window モードで復元用)
+  app.post('/api/window-bounds', async (req, res) => {
+    const b = req.body;
+    if (b && Number.isFinite(b.width) && Number.isFinite(b.height)) {
+      await saveWindowBounds({
+        width:  Math.round(b.width),
+        height: Math.round(b.height),
+        x: Number.isFinite(b.x) ? Math.round(b.x) : undefined,
+        y: Number.isFinite(b.y) ? Math.round(b.y) : undefined,
+      });
+    }
+    res.json({ ok: true });
   });
 
   // POST /api/folder  { path }
@@ -527,21 +587,51 @@ export function createServer(meta = {}) {
 
 // ---- Native folder picker ------------------------------------------------
 
+function pickerLog(...parts) {
+  try {
+    appendFileSync(
+      join(tmpdir(), 'fastmd-explorer.log'),
+      `[picker] ${parts.join(' ')}\n`,
+    );
+  } catch { /* ignore */ }
+}
+
 function pickFolderNative() {
   try {
     if (process.platform === 'win32') return pickFolderWindows();
     if (process.platform === 'darwin') return pickFolderMac();
     return pickFolderLinux();
-  } catch {
+  } catch (err) {
+    pickerLog('ERROR', err?.message ?? String(err));
+    if (err?.stderr) pickerLog('STDERR', String(err.stderr));
+    if (err?.stdout) pickerLog('STDOUT', String(err.stdout));
     return null;
   }
 }
 
 function pickFolderWindows() {
-  // src/picker.ps1 で IFileOpenDialog (Vista+ モダンエクスプローラ) を起動
-  const ps1 = join(__dirname, 'picker.ps1');
-  const result = execSync(
-    `powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File "${ps1}"`,
+  // src/picker.ps1 で IFileOpenDialog (Vista+ モダンエクスプローラ) を起動。
+  //
+  // pkg でパッケージ化すると picker.ps1 は仮想スナップショット内 (C:\snapshot\...)
+  // に置かれ、外部の powershell.exe からは -File でアクセスできない。
+  // そこで内容を読み取り (スナップショット内なら fs で読める)、
+  // base64(UTF-16LE) エンコードして -EncodedCommand で直接渡す。
+  //
+  // 重要: execSync ではなく execFileSync を使う。
+  // execSync は cmd.exe 経由で実行され、cmd のコマンドライン長上限 (約 8191 文字)
+  // に -EncodedCommand (base64) が引っ掛かり "The command line is too long" で失敗する。
+  // execFileSync はシェルを介さず CreateProcess で直接起動するため上限が 32767 文字になる。
+  //
+  // また、コンソール窓を隠す指定 (windowsHide:true / -WindowStyle Hidden) は使わない。
+  // いずれもフォルダ選択ダイアログまで隠す/即閉じさせてしまうため
+  // (SW_HIDE の子への継承 / 所有ウィンドウ無しモーダルの即終了)。
+  // そのため powershell のコンソール窓はダイアログ表示中は出たままになる。
+  const ps1     = join(__dirname, 'picker.ps1');
+  const script  = readFileSync(ps1, 'utf8');
+  const encoded = Buffer.from(script, 'utf16le').toString('base64');
+  const result  = execFileSync(
+    'powershell.exe',
+    ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
     { encoding: 'utf8', timeout: 120_000 }
   ).trim();
   return result || null;
