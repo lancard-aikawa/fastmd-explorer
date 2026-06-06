@@ -10,7 +10,7 @@
 | 必要なもの | 補足 |
 |---|---|
 | **Node.js 18 以上** | pkg のターゲットが `node22-win-x64`。ビルドマシンは v20〜24 が無難 |
-| **pnpm**（corepack 経由） | `package.json` の `packageManager: pnpm@11.1.3` で pin 済み。corepack が自動で合わせる |
+| **pnpm**（corepack 経由） | `package.json` の `packageManager` で pin 済み（現在 pnpm 11.5.0）。corepack が自動で合わせる |
 | **インターネット接続** | 初回 `pnpm install` と、pkg が Node バイナリ (`node22-win-x64`) を初回 DL するため |
 | **Windows**（推奨） | exe 実行・フォルダピッカー (powershell) は Windows 前提。クロスビルドは下記参照 |
 
