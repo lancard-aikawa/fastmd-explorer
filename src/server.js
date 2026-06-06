@@ -73,6 +73,89 @@ function escHtml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// ---- Front matter (YAML ヘッダー) -----------------------------------------
+// ファイル先頭の `---` で囲まれた YAML を GitHub 風のテーブルとして表示する。
+// 依存を増やさない軽量パーサ。フラットな key: value と簡単なリスト/インライン
+// 配列に対応 (ドキュメントの front matter の大半はこの範囲)。
+
+function stripQuotes(s) {
+  const t = s.trim();
+  if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
+    return t.slice(1, -1);
+  }
+  return t;
+}
+
+/** YAML フローシーケンス `[a, b, c]` を配列に。それ以外はそのままの文字列。 */
+function parseScalarOrInline(val) {
+  const m = val.match(/^\[(.*)\]$/);
+  if (m) {
+    return m[1].trim() === ''
+      ? []
+      : m[1].split(',').map((x) => stripQuotes(x));
+  }
+  return stripQuotes(val);
+}
+
+/** front matter ブロックを [key, value] の配列に。value は文字列か配列。 */
+function parseFrontMatter(block) {
+  const entries = [];
+  let cur = null; // ブロックリスト収集中の { key, list }
+  for (const rawLine of block.split(/\r?\n/)) {
+    const line = rawLine.replace(/\s+$/, '');
+    if (!line.trim() || line.trim().startsWith('#')) continue;
+
+    const listItem = line.match(/^\s*-\s+(.*)$/);
+    if (listItem && cur) {
+      cur.list.push(stripQuotes(listItem[1]));
+      continue;
+    }
+
+    const kv = line.match(/^([^:#\s][^:]*):\s*(.*)$/);
+    if (kv) {
+      if (cur) { entries.push([cur.key, cur.list]); cur = null; }
+      const key = kv[1].trim();
+      const val = kv[2].trim();
+      if (val === '') {
+        cur = { key, list: [] }; // 後続のブロックリストを待つ
+      } else {
+        entries.push([key, parseScalarOrInline(val)]);
+      }
+    }
+  }
+  if (cur) entries.push([cur.key, cur.list]);
+  return entries;
+}
+
+function renderFrontMatterTable(entries) {
+  if (!entries.length) return '';
+  const rows = entries.map(([k, v]) => {
+    let valHtml;
+    if (Array.isArray(v)) {
+      // GitHub と同様、配列は横並びで表示する
+      valHtml = v.map((i) => `<span class="fm-item">${escHtml(String(i))}</span>`).join('');
+    } else {
+      valHtml = escHtml(String(v));
+    }
+    return `<tr><th scope="row">${escHtml(k)}</th><td>${valHtml}</td></tr>`;
+  }).join('');
+  return `<table class="front-matter"><tbody>${rows}</tbody></table>\n`;
+}
+
+/** 先頭の front matter を抽出。{ entries, body } を返す。 */
+function extractFrontMatter(content) {
+  const text = content.replace(/^﻿/, ''); // 先頭 BOM を除去
+  const m = text.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/);
+  if (!m) return { entries: [], body: content };
+  return { entries: parseFrontMatter(m[1]), body: text.slice(m[0].length) };
+}
+
+/** front matter テーブル + 本文 (marked) をまとめてレンダリングする。 */
+function renderMarkdown(content) {
+  const { entries, body } = extractFrontMatter(content);
+  return renderFrontMatterTable(entries) + marked.parse(body);
+}
+
 // ---- Filesystem crossing detection ---------------------------------------
 
 function detectFsCrossing(targetPath) {
@@ -297,7 +380,7 @@ export function createServer(meta = {}) {
       const content = await readFile(filePath, 'utf8');
       const charCount = [...content.replace(/\s+/g, '')].length;
       const cached = getCachedHtml(filePath, fileStat.mtimeMs);
-      const rawHtml = cached ?? marked.parse(content);
+      const rawHtml = cached ?? renderMarkdown(content);
       if (!cached) setCachedHtml(filePath, fileStat.mtimeMs, rawHtml);
       const html = rewriteImageSrcs(rawHtml, dirname(filePath));
       res.json({ html, mtime: fileStat.mtimeMs, charCount });
@@ -326,7 +409,7 @@ export function createServer(meta = {}) {
     const { content, filePath } = req.body ?? {};
     if (typeof content !== 'string') return res.status(400).json({ error: 'content が必要です' });
     try {
-      const rawHtml = marked.parse(content);
+      const rawHtml = renderMarkdown(content);
       const html = filePath ? rewriteImageSrcs(rawHtml, dirname(normalize(filePath))) : rawHtml;
       res.json({ html });
     } catch (err) {

@@ -1001,6 +1001,49 @@ select { cursor: pointer; }
 .markdown-body th:hover { background: rgba(128,128,128,0.15); }
 .markdown-body tr:nth-child(even) td { background: rgba(128,128,128,0.04); }
 
+/* Front matter (YAML ヘッダー) テーブル — GitHub 風 */
+.markdown-body table.front-matter {
+  width: auto;
+  max-width: 100%;
+  margin: 0 0 1.4em;
+  font-size: 12.5px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+}
+.markdown-body table.front-matter th,
+.markdown-body table.front-matter td {
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 5px 14px;
+  vertical-align: top;
+  text-align: left;
+}
+.markdown-body table.front-matter tr:last-child th,
+.markdown-body table.front-matter tr:last-child td { border-bottom: none; }
+.markdown-body table.front-matter th {
+  background: var(--bg-sidebar);
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text-dim);
+  border-right: 1px solid var(--border);
+  cursor: default;
+}
+.markdown-body table.front-matter th:hover { background: var(--bg-sidebar); }
+.markdown-body table.front-matter tr:nth-child(even) td { background: transparent; }
+/* 配列値は横並びの小さなチップで表示 (GitHub 風) */
+.markdown-body table.front-matter td .fm-item {
+  display: inline-block;
+  margin: 1px 4px 1px 0;
+  padding: 1px 8px;
+  background: var(--bg-tag);
+  border-radius: 10px;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
 .markdown-body a { color: var(--accent); text-decoration: none; }
 .markdown-body a:hover { text-decoration: underline; }
 
