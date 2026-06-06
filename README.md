@@ -45,6 +45,8 @@ pnpm run build
 実行後、`dist/fastmd-explorer.exe` (Windows x64、約 64MB) が生成されます。
 exe をダブルクリックすると、Node.js が無くても利用できます。
 
+> 別マシンで clone してビルドする際の前提・ハマりどころ・CI 例は [BUILD.md](BUILD.md) を参照してください。
+
 ### 単体ウィンドウ (window モード)
 
 配布版の exe は **window モード**で動作します:
