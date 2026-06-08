@@ -156,6 +156,93 @@ function renderMarkdown(content) {
   return renderFrontMatterTable(entries) + marked.parse(body);
 }
 
+// ---- Link extraction / combined export helpers ---------------------------
+// リンク図 (/api/linkgraph) と全md結合 (/api/combined) で共用するユーティリティ。
+
+const MD_LINK_RE   = /\[(?:[^\]]*)\]\(\s*([^)\s]+?)(?:\s+"[^"]*")?\s*\)/g;
+const WIKI_LINK_RE = /\[\[([^\]|#\n]+?)(?:#[^\]|\n]*)?(?:\|[^\]\n]*)?\]\]/g;
+const MD_EXT_RE    = /\.(md|markdown|mdown|mkd)$/i;
+
+/** posix な相対パスを baseDir に結合し、`.`/`..` を解決して返す。 */
+function posixJoin(baseDir, rel) {
+  const parts = baseDir ? baseDir.split('/').filter(Boolean) : [];
+  for (const seg of rel.split('/')) {
+    if (seg === '' || seg === '.') continue;
+    if (seg === '..') parts.pop();
+    else parts.push(seg);
+  }
+  return parts.join('/');
+}
+
+/** 生の Markdown から発リンク先を抽出。{ kind: 'md'|'wiki', raw } の配列。 */
+function extractLinkTargets(content) {
+  const out = [];
+  let m;
+  MD_LINK_RE.lastIndex = 0;
+  while ((m = MD_LINK_RE.exec(content)) !== null) {
+    const raw = m[1];
+    if (/^(https?:|mailto:|data:|tel:|#)/i.test(raw)) continue;
+    out.push({ kind: 'md', raw });
+  }
+  WIKI_LINK_RE.lastIndex = 0;
+  while ((m = WIKI_LINK_RE.exec(content)) !== null) {
+    out.push({ kind: 'wiki', raw: m[1].trim() });
+  }
+  return out;
+}
+
+/**
+ * リンク先を実在ファイルの (posix) 相対パスへ解決する。見つからなければ null。
+ * @param srcDir       リンク元ファイルのディレクトリ (posix 相対パス)
+ * @param fileSetLc    Map<小文字 rel, 実 rel>
+ * @param basenameLc   Map<小文字 basename(.md付き), 実 rel>  (wikilink 用)
+ */
+function resolveLinkTarget(t, srcDir, fileSetLc, basenameLc) {
+  if (t.kind === 'wiki') {
+    let name = t.raw;
+    if (!MD_EXT_RE.test(name)) name += '.md';
+    return basenameLc.get(name.toLowerCase()) ?? null;
+  }
+  let raw = t.raw.split('#')[0];
+  if (!raw) return null;
+  try { raw = decodeURIComponent(raw); } catch { /* keep raw */ }
+  if (!MD_EXT_RE.test(raw)) return null;
+  const joined = posixJoin(srcDir, raw);
+  return fileSetLc.get(joined.toLowerCase()) ?? null;
+}
+
+/** 結合PDF 用の見出し slug。GitHub 風 (小文字化・記号除去・空白→ハイフン)。 */
+function slugify(text) {
+  return String(text).trim().toLowerCase()
+    .replace(/<[^>]*>/g, '')
+    .replace(/[^\p{L}\p{N}\s-]/gu, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function stripTags(html) {
+  return html.replace(/<[^>]*>/g, '');
+}
+
+/** 結合PDF の目次 HTML を生成 (ファイル名=第1階層, 見出し=第2階層以降)。 */
+function buildCombinedToc(toc) {
+  let html = '<nav class="cb-toc"><h1 class="cb-toc-title">目次</h1><ol class="cb-toc-files">';
+  for (const f of toc) {
+    html += `<li class="cb-toc-file"><a href="#file-${f.idx}">${escHtml(f.rel)}</a>`;
+    if (f.headings.length) {
+      html += '<ol class="cb-toc-headings">';
+      for (const h of f.headings) {
+        html += `<li class="cb-toc-h cb-toc-h${h.level}"><a href="#${h.id}">${escHtml(h.text)}</a></li>`;
+      }
+      html += '</ol>';
+    }
+    html += '</li>';
+  }
+  html += '</ol></nav>';
+  return html;
+}
+
 // ---- Filesystem crossing detection ---------------------------------------
 
 function detectFsCrossing(targetPath) {
@@ -663,6 +750,165 @@ export function createServer(meta = {}) {
   app.post('/api/folder/pick', (_req, res) => {
     const path = pickFolderNative();
     res.json({ path }); // null if cancelled
+  });
+
+  // GET /api/linkgraph  → { nodes:[{rel,name}], edges:[{from,to}], total, isolatedCount }
+  // 全 .md を走査し、md リンク / wikilink の相互参照グラフを構築する。
+  // (リンクを 1 本以上持つファイルのみノード化。孤立ファイル数は別途返す)
+  app.get('/api/linkgraph', async (_req, res) => {
+    if (!currentRoot) return res.status(400).json({ error: 'フォルダが未選択です' });
+    try {
+      const files = [];                 // { rel, name }
+      const contents = new Map();       // rel -> content
+      async function walk(dir) {
+        let entries;
+        try { entries = await readdir(dir, { withFileTypes: true }); } catch { return; }
+        for (const entry of entries) {
+          if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+          const full = join(dir, entry.name);
+          if (entry.isDirectory()) { await walk(full); continue; }
+          if (!MD_EXT_RE.test(entry.name)) continue;
+          const rel = relative(currentRoot, full).replace(/\\/g, '/');
+          let content;
+          try { content = await readFile(full, 'utf8'); } catch { continue; }
+          files.push({ rel, name: entry.name });
+          contents.set(rel, content);
+        }
+      }
+      await walk(currentRoot);
+
+      const fileSetLc  = new Map();
+      const basenameLc = new Map();
+      for (const f of files) {
+        fileSetLc.set(f.rel.toLowerCase(), f.rel);
+        const base = f.name.toLowerCase();
+        if (!basenameLc.has(base)) basenameLc.set(base, f.rel);
+      }
+
+      const edges = [];
+      const seen = new Set();
+      const degree = new Map();
+      for (const f of files) {
+        const srcDir = f.rel.includes('/') ? f.rel.slice(0, f.rel.lastIndexOf('/')) : '';
+        for (const t of extractLinkTargets(contents.get(f.rel) ?? '')) {
+          const tgt = resolveLinkTarget(t, srcDir, fileSetLc, basenameLc);
+          if (!tgt || tgt === f.rel) continue;
+          const key = f.rel + '\n' + tgt;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          edges.push({ from: f.rel, to: tgt });
+          degree.set(f.rel, (degree.get(f.rel) ?? 0) + 1);
+          degree.set(tgt, (degree.get(tgt) ?? 0) + 1);
+        }
+      }
+
+      const nodes = files
+        .filter((f) => degree.has(f.rel))
+        .map((f) => ({ rel: f.rel, name: f.name.replace(MD_EXT_RE, '') }));
+
+      res.json({ nodes, edges, total: files.length, isolatedCount: files.length - nodes.length });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/combined  → { html, fileCount }
+  // フォルダ内の全 .md をツリー順に 1 つの HTML へ結合する (印刷で PDF 化する想定)。
+  //  - 各ファイルの前に扉 (パス・更新日時・文字数) を挿入し改ページ
+  //  - 目次はファイル名を第1階層・見出しを第2階層以降にネスト
+  //  - ファイル間の md リンクは結合先の節アンカー (#file-N) へ書き換え
+  app.get('/api/combined', async (_req, res) => {
+    if (!currentRoot) return res.status(400).json({ error: 'フォルダが未選択です' });
+    try {
+      const { tree } = await scanMarkdownFiles(currentRoot);
+      const ordered = [];
+      (function flatten(node) {
+        if (!node) return;
+        if (node.type === 'file') { ordered.push(node.relativePath.replace(/\\/g, '/')); return; }
+        (node.children ?? []).forEach(flatten);
+      })(tree);
+
+      if (!ordered.length) return res.json({ html: '', fileCount: 0 });
+
+      const idxByRelLc  = new Map();
+      const idxByBaseLc = new Map();
+      ordered.forEach((rel, i) => {
+        idxByRelLc.set(rel.toLowerCase(), i);
+        const base = rel.split('/').pop().toLowerCase();
+        if (!idxByBaseLc.has(base)) idxByBaseLc.set(base, i);
+      });
+
+      const sections = [];
+      const toc = [];
+
+      for (let i = 0; i < ordered.length; i++) {
+        const rel = ordered[i];
+        const abs = join(currentRoot, rel);
+        let content, fstat;
+        try { fstat = await stat(abs); content = await readFile(abs, 'utf8'); } catch { continue; }
+
+        const { entries, body } = extractFrontMatter(content);
+        let rendered = renderFrontMatterTable(entries) + marked.parse(body);
+
+        // 見出しにファイル単位で一意な id を付与しつつ目次用に収集
+        const headings = [];
+        const usedSlugs = new Set();
+        rendered = rendered.replace(/<h([1-6])([^>]*)>([\s\S]*?)<\/h\1>/g, (_all, lvl, attrs, inner) => {
+          const text = stripTags(inner).trim();
+          let base = slugify(text) || 'section';
+          let slug = base, n = 1;
+          while (usedSlugs.has(slug)) slug = `${base}-${n++}`;
+          usedSlugs.add(slug);
+          const id = `file-${i}--${slug}`;
+          headings.push({ level: Number(lvl), text, id });
+          return `<h${lvl}${attrs} id="${id}">${inner}</h${lvl}>`;
+        });
+
+        // ファイル間の md / wiki リンクを結合先の節アンカーへ書き換え
+        const srcDir = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '';
+        rendered = rendered.replace(/<a\b([^>]*?)\bhref="([^"]*)"([^>]*)>/gi, (all, pre, href, post) => {
+          if (/^(https?:|mailto:|data:|tel:)/i.test(href) || href.startsWith('#')) return all;
+          const isWiki = /class="[^"]*wikilink/.test(pre + post);
+          let targetIdx = null;
+          if (isWiki) {
+            let name = href.split('#')[0];
+            if (!MD_EXT_RE.test(name)) name += '.md';
+            targetIdx = idxByBaseLc.get(name.toLowerCase());
+          } else {
+            let raw = href.split('#')[0];
+            try { raw = decodeURIComponent(raw); } catch { /* keep */ }
+            if (MD_EXT_RE.test(raw)) targetIdx = idxByRelLc.get(posixJoin(srcDir, raw).toLowerCase());
+          }
+          if (targetIdx === undefined || targetIdx === null) return all;
+          return `<a${pre}href="#file-${targetIdx}"${post}>`;
+        });
+
+        rendered = rewriteImageSrcs(rendered, dirname(abs));
+
+        const d = new Date(fstat.mtimeMs);
+        const dstr = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        const charCount = [...content.replace(/\s+/g, '')].length;
+
+        sections.push(
+          `<section class="cb-file" id="file-${i}">` +
+            `<div class="cb-sep">` +
+              `<div class="cb-sep-path">${escHtml(rel)}</div>` +
+              `<div class="cb-sep-meta">更新: ${dstr}　文字数: ${charCount}</div>` +
+            `</div>` +
+            `<div class="markdown-body cb-body">${rendered}</div>` +
+          `</section>`
+        );
+        toc.push({ idx: i, rel, name: rel.split('/').pop(), headings });
+      }
+
+      const rootName = currentRoot.replace(/[/\\]+$/, '').split(/[/\\]/).pop();
+      const cover = `<div class="cb-cover"><h1 class="cb-cover-title">${escHtml(rootName)}</h1>` +
+        `<div class="cb-cover-meta">${ordered.length} ファイル結合</div></div>`;
+
+      res.json({ html: cover + buildCombinedToc(toc) + sections.join('\n'), fileCount: ordered.length });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   return app;

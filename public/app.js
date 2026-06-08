@@ -1,7 +1,12 @@
 // fastmd-explorer — vanilla JS, no build step
 
 // ---- Mermaid init --------------------------------------------------------
-mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose' });
+const MERMAID_BASE = { startOnLoad: false, securityLevel: 'loose', maxEdges: 2000, maxTextSize: 200000 };
+mermaid.initialize({ ...MERMAID_BASE, theme: 'default' });
+
+// 画面表示用の Mermaid テーマ (ダークテーマ時は dark)。
+// 印刷/PDF は常に default (白地・濃い文字) で描き直すため別管理する。
+function mermaidTheme() { return state.theme === 'dark' ? 'dark' : 'default'; }
 
 // ---- State ---------------------------------------------------------------
 const state = {
@@ -35,6 +40,17 @@ const btnFontUp      = $('btn-font-up');
 const fontSizeLabel  = $('font-size-label');
 const btnRefresh     = $('btn-refresh');
 const btnTreeRefresh = $('btn-tree-refresh');
+const btnLinkgraph   = $('btn-linkgraph');
+const btnCombinedPdf = $('btn-combined-pdf');
+const linkgraphOverlay = $('linkgraph-overlay');
+const lgGraph        = $('lg-graph');
+const lgStats        = $('lg-stats');
+const lgClose        = $('lg-close');
+const combinedOverlay = $('combined-overlay');
+const combinedContent = $('combined-content');
+const cbStats        = $('cb-stats');
+const cbPrint        = $('cb-print');
+const cbClose        = $('cb-close');
 const btnTheme       = $('btn-theme');
 const btnSettings    = $('btn-settings');
 const settingsPanel  = $('settings-panel');
@@ -150,7 +166,7 @@ function applyTheme(theme) {
   state.theme = theme;
   document.documentElement.setAttribute('data-theme', theme);
   hljsTheme.href = theme === 'dark' ? '/vendor/hljs-dark.css' : '/vendor/hljs-light.css';
-  mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: theme === 'dark' ? 'dark' : 'default' });
+  mermaid.initialize({ ...MERMAID_BASE, theme: theme === 'dark' ? 'dark' : 'default' });
   localStorage.setItem('theme', theme); // ユーザーの選択を永続化 (再起動後も維持)
 }
 
@@ -871,7 +887,10 @@ function highlightInPreview(q) {
 async function renderMermaid() {
   const nodes = Array.from(previewContent.querySelectorAll('.mermaid'));
   if (!nodes.length) return;
+  mermaid.initialize({ ...MERMAID_BASE, theme: mermaidTheme() });
   nodes.forEach((el) => {
+    // 元のグラフ定義を保持しておく (印刷時に配色を変えて描き直すため)
+    if (!el.dataset.mermaidSrc) el.dataset.mermaidSrc = el.textContent;
     el.removeAttribute('data-processed');
     el.removeAttribute('data-mermaid-chart');
   });
@@ -885,11 +904,17 @@ async function renderMermaid() {
       }
     });
   }
+  // 描画済み SVG をテーマ別にキャッシュ (印刷時の配色差し替えを再描画なしで行うため)
+  const theme = mermaidTheme();
+  nodes.forEach((el) => { if (el.querySelector('svg')) (el._svgCache ??= {})[theme] = el.innerHTML; });
   initMermaidZoom();
 }
 
 function initMermaidZoom() {
-  previewContent.querySelectorAll('.mermaid').forEach((container) => {
+  previewContent.querySelectorAll('.mermaid').forEach(attachMermaidZoom);
+}
+
+function attachMermaidZoom(container) {
     const svg = container.querySelector('svg');
     if (!svg || container.dataset.zoomInit) return;
     container.dataset.zoomInit = '1';
@@ -959,7 +984,192 @@ function initMermaidZoom() {
       applyTransform();
     });
     container.appendChild(controls);
-  });
+}
+
+// ---- Mermaid print handling ----------------------------------------------
+// 個別ファイルの印刷/PDF出力。ダークテーマだと図が白地で読めないため、印刷時だけ
+// 図を白地 (default) 配色の SVG に描き直す。描き直しは図ごとに初回 1 回のみで、
+// 以降はテーマ別にキャッシュした SVG を innerHTML で差し替えるだけ (再描画なし)。
+// 図はベクターのまま印刷する (送信先「PDF として保存」なら高速・鮮明・軽量)。
+async function printActivePreview() {
+  // ライトテーマは既に白地配色なので描き直し不要 → そのまま印刷
+  if (mermaidTheme() === 'default') { window.print(); return; }
+
+  const nodes = Array.from(previewContent.querySelectorAll('.mermaid'));
+  if (!nodes.length) { window.print(); return; }
+
+  // 白地配色 SVG が未キャッシュの図だけ 1 度描画してキャッシュ
+  const need = nodes.filter((el) => !el._svgCache?.default && el.dataset.mermaidSrc);
+  if (need.length) {
+    mermaid.initialize({ ...MERMAID_BASE, theme: 'default' });
+    need.forEach((el) => {
+      el.textContent = el.dataset.mermaidSrc;
+      el.removeAttribute('data-processed');
+      el.removeAttribute('data-mermaid-chart');
+    });
+    try { await mermaid.run({ nodes: need }); } catch { /* 図のエラーは無視 */ }
+    need.forEach((el) => { if (el.querySelector('svg')) (el._svgCache ??= {}).default = el.innerHTML; });
+  }
+
+  // 表示中の図を白地配色へ差し替え (再描画なし)
+  nodes.forEach((el) => { if (el._svgCache?.default) el.innerHTML = el._svgCache.default; });
+
+  // 印刷後に元 (ダーク) 配色へ戻し、ズーム操作を再付与
+  const restore = () => {
+    window.removeEventListener('afterprint', restore);
+    nodes.forEach((el) => {
+      const svg = el._svgCache?.dark;
+      if (svg) { el.innerHTML = svg; delete el.dataset.zoomInit; attachMermaidZoom(el); }
+    });
+  };
+  window.addEventListener('afterprint', restore);
+  window.print();
+}
+
+// ---- Link graph overlay --------------------------------------------------
+// 全 .md の相互リンクを Mermaid フローチャートで図示する。
+// ボタン押下時に初めて /api/linkgraph を叩き、描画する (それまで負荷ゼロ)。
+
+let _graphNodeMap = {};   // mermaid node id -> { path, relativePath, name }
+
+function mermaidLabel(s) {
+  // Mermaid の "..." 文字列に入れられる形へ。二重引用符はエンティティ化。
+  return String(s).replace(/"/g, '#quot;').replace(/[\r\n]+/g, ' ');
+}
+
+async function openLinkGraph() {
+  if (!state.currentRoot) { showWarning('フォルダが未選択です', 'warn'); return; }
+  linkgraphOverlay.classList.remove('hidden');
+  lgGraph.innerHTML = '<div class="lg-loading">リンクを解析中...</div>';
+  lgStats.textContent = '';
+  try {
+    const data = await get('/api/linkgraph');
+    if (!data.nodes.length) {
+      lgGraph.innerHTML = '<div class="lg-empty">mdファイル間のリンクが見つかりませんでした</div>';
+      lgStats.textContent = `0 / ${data.total} ファイル`;
+      return;
+    }
+
+    _graphNodeMap = {};
+    const sep = state.currentRoot.includes('\\') ? '\\' : '/';
+    const idOf = new Map();
+    data.nodes.forEach((n, i) => {
+      const id = 'g' + i;
+      idOf.set(n.rel, id);
+      _graphNodeMap[id] = {
+        path: state.currentRoot + sep + n.rel.replace(/\//g, sep),
+        relativePath: n.rel,
+        name: n.rel.split('/').pop(),
+      };
+    });
+
+    // 同名ファイルはフォルダ名が無いと区別できないため、basename が重複する
+    // ノードのみ相対パス (拡張子なし) で表示して曖昧さを解消する。
+    const baseCount = new Map();
+    data.nodes.forEach((n) => baseCount.set(n.name, (baseCount.get(n.name) ?? 0) + 1));
+    const labelOf = (n) => (baseCount.get(n.name) > 1
+      ? n.rel.replace(/\.(md|markdown|mdown|mkd)$/i, '')
+      : n.name);
+
+    const lines = ['graph LR'];
+    data.nodes.forEach((n) => lines.push(`  ${idOf.get(n.rel)}["${mermaidLabel(labelOf(n))}"]`));
+    data.edges.forEach((e) => {
+      const a = idOf.get(e.from), b = idOf.get(e.to);
+      if (a && b) lines.push(`  ${a} --> ${b}`);
+    });
+    data.nodes.forEach((n) => lines.push(`  click ${idOf.get(n.rel)} call openGraphNode()`));
+
+    lgGraph.innerHTML = '';
+    const div = document.createElement('div');
+    div.className = 'mermaid';
+    div.textContent = lines.join('\n');
+    lgGraph.appendChild(div);
+
+    try {
+      await mermaid.run({ nodes: [div] });
+      attachMermaidZoom(div);
+    } catch (e) {
+      lgGraph.innerHTML = `<div class="error-msg">図の描画に失敗しました（ノード/エッジが多すぎる可能性があります）: ${escHtml(e?.message ?? e?.str ?? String(e))}</div>`;
+      return;
+    }
+
+    lgStats.textContent = data.isolatedCount
+      ? `${data.nodes.length} ファイル表示・${data.edges.length} リンク（リンクなし ${data.isolatedCount} 件は非表示）`
+      : `${data.nodes.length} ファイル・${data.edges.length} リンク`;
+  } catch (err) {
+    lgGraph.innerHTML = `<div class="error-msg">エラー: ${escHtml(err.message)}</div>`;
+  }
+}
+
+function closeLinkGraph() {
+  linkgraphOverlay.classList.add('hidden');
+  lgGraph.innerHTML = '';
+}
+
+// Mermaid の click ディレクティブから呼ばれる (securityLevel:'loose')。
+window.openGraphNode = function (nodeId) {
+  const info = _graphNodeMap[nodeId];
+  if (!info) return;
+  closeLinkGraph();
+  openFile(info);
+};
+
+// ---- Combined PDF overlay ------------------------------------------------
+// フォルダ内の全 .md を 1 つの結合プレビューにまとめ、印刷で PDF 化する。
+
+async function openCombined() {
+  if (!state.currentRoot) { showWarning('フォルダが未選択です', 'warn'); return; }
+  combinedOverlay.classList.remove('hidden');
+  combinedContent.innerHTML = '<div class="cb-loading">全mdを結合中...</div>';
+  cbStats.textContent = '';
+  try {
+    const { html, fileCount } = await get('/api/combined');
+    if (!fileCount) {
+      combinedContent.innerHTML = '<div class="cb-loading">Markdownファイルが見つかりませんでした</div>';
+      return;
+    }
+    combinedContent.innerHTML = html;
+    cbStats.textContent = `${fileCount} ファイル`;
+
+    // Mermaid 図を描画。結合プレビューは PDF 前提のビューなので、テーマに依らず
+    // 常にライト配色 (default) で描く → 画面の見た目がそのまま PDF になる。
+    const nodes = Array.from(combinedContent.querySelectorAll('.mermaid'));
+    if (nodes.length) {
+      mermaid.initialize({ ...MERMAID_BASE, theme: 'default' });
+      nodes.forEach((el) => {
+        if (!el.dataset.mermaidSrc) el.dataset.mermaidSrc = el.textContent;
+        el.removeAttribute('data-processed');
+      });
+      try { await mermaid.run({ nodes }); } catch { /* 図のエラーは無視 */ }
+      mermaid.initialize({ ...MERMAID_BASE, theme: mermaidTheme() }); // 本体の描画用に戻す
+    }
+
+    // 目次・ファイル間リンク (#file-N / #file-N--slug) を画面内スクロールに
+    combinedContent.querySelectorAll('a[href^="#"]').forEach((a) => {
+      a.addEventListener('click', (e) => {
+        const target = combinedContent.querySelector(`[id="${CSS.escape(a.getAttribute('href').slice(1))}"]`);
+        if (target) { e.preventDefault(); target.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+      });
+    });
+    combinedContent.scrollTop = 0;
+  } catch (err) {
+    combinedContent.innerHTML = `<div class="error-msg">エラー: ${escHtml(err.message)}</div>`;
+  }
+}
+
+function closeCombined() {
+  combinedOverlay.classList.add('hidden');
+  combinedContent.innerHTML = '';
+}
+
+function printCombined() {
+  document.body.classList.add('combined-printing');
+  const cleanup = () => {
+    document.body.classList.remove('combined-printing');
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+  window.print();
 }
 
 // ---- In-page find (Ctrl+F) -----------------------------------------------
@@ -2185,6 +2395,18 @@ function bindEvents() {
 
   btnTheme.addEventListener('click', () => applyTheme(state.theme === 'light' ? 'dark' : 'light'));
 
+  // Link graph & combined PDF overlays
+  btnLinkgraph.addEventListener('click', openLinkGraph);
+  lgClose.addEventListener('click', closeLinkGraph);
+  btnCombinedPdf.addEventListener('click', openCombined);
+  cbClose.addEventListener('click', closeCombined);
+  cbPrint.addEventListener('click', printCombined);
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (!linkgraphOverlay.classList.contains('hidden')) { closeLinkGraph(); return; }
+    if (!combinedOverlay.classList.contains('hidden'))  { closeCombined(); }
+  });
+
   btnFontDown.addEventListener('click', () => {
     const cur = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--preview-font-size'), 10) || FONT_DEFAULT;
     applyFontSize(Math.max(cur - FONT_STEP, FONT_MIN));
@@ -2199,7 +2421,7 @@ function bindEvents() {
   btnNavFwd.addEventListener('click',  navForward);
   btnFlag.addEventListener('click',    toggleFlag);
   btnFullview.addEventListener('click', toggleFullview);
-  btnPrint.addEventListener('click', () => window.print());
+  btnPrint.addEventListener('click', printActivePreview);
 
   // Find bar
   findInput.addEventListener('input', () => runFind(findInput.value.trim()));

@@ -34,6 +34,8 @@
         <span id="font-size-label" title="クリックでリセット">16px</span>
         <button id="btn-font-up" title="文字を大きく">A+</button>
         <button id="btn-refresh" title="ファイルツリーを再読み込み (Ctrl+R)">↺</button>
+        <button id="btn-linkgraph" title="リンク図（mdファイルの相互リンクを図示）">🕸</button>
+        <button id="btn-combined-pdf" title="全mdを1つのPDFに（印刷）">📑</button>
         <button id="btn-settings" title="設定とシステム情報">⚙</button>
         <button id="btn-theme" title="テーマ切替">◐</button>
       </div>
@@ -103,7 +105,7 @@
             <span id="file-breadcrumb"></span>
             <div id="file-actions">
               <button id="btn-flag" title="重要フラグ (Ctrl+I)">☆</button>
-              <button id="btn-print" title="印刷 / PDF出力">⎙</button>
+              <button id="btn-print" title="印刷 / PDF出力（送信先は「PDF として保存」推奨。「Microsoft Print to PDF」は遅く・肥大化します）">⎙</button>
               <button id="btn-fullview" title="フル表示 (Ctrl+Shift+F)">⤢</button>
               <button id="btn-edit" title="編集 (Ctrl+E)">編集</button>
               <button id="btn-save" class="hidden" title="保存 (Ctrl+S)">保存</button>
@@ -213,6 +215,29 @@
       <span id="status-uptime" title="サーバ稼働時間"></span>
     </footer>
 
+  </div>
+
+  <!-- Link graph overlay -->
+  <div id="linkgraph-overlay" class="hidden">
+    <div class="lg-toolbar">
+      <span class="lg-title">🕸 リンク図</span>
+      <span id="lg-stats" class="lg-stats"></span>
+      <button id="lg-close" title="閉じる (Esc)">✕</button>
+    </div>
+    <div id="lg-stage">
+      <div id="lg-graph"></div>
+    </div>
+  </div>
+
+  <!-- Combined PDF overlay -->
+  <div id="combined-overlay" class="hidden">
+    <div class="cb-toolbar">
+      <span class="cb-title">📑 全md 結合プレビュー</span>
+      <span id="cb-stats" class="cb-stats"></span>
+      <button id="cb-print" title="PDFに出力 / 印刷（送信先は「PDF として保存」推奨。「Microsoft Print to PDF」は遅く・肥大化します）">⎙ PDF出力</button>
+      <button id="cb-close" title="閉じる (Esc)">✕</button>
+    </div>
+    <div id="combined-content"></div>
   </div>
 
   <!-- Settings panel (modal) -->
