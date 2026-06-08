@@ -1484,17 +1484,173 @@ body.fullview #btn-fullview:hover {
   padding: 3px 7px;
 }
 
+/* ---- Link graph & Combined PDF overlays --------------------------------- */
+#linkgraph-overlay,
+#combined-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+#linkgraph-overlay.hidden,
+#combined-overlay.hidden { display: none; }
+
+.lg-toolbar,
+.cb-toolbar {
+  flex-shrink: 0;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  background: var(--bg-header);
+  color: var(--text-header);
+  border-bottom: 1px solid var(--border);
+}
+.lg-title, .cb-title { font-weight: 600; }
+.lg-stats, .cb-stats { color: var(--text-dim); font-size: 12px; margin-right: auto; }
+.lg-toolbar button,
+.cb-toolbar button {
+  background: transparent;
+  color: var(--text-header);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.lg-toolbar button:hover,
+.cb-toolbar button:hover { background: rgba(127, 127, 127, 0.25); }
+#cb-print { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+
+#lg-stage {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+#lg-graph { width: 100%; height: 100%; }
+#lg-graph .mermaid {
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+}
+#lg-graph .mermaid svg g.node { cursor: pointer; }
+.lg-loading, .lg-empty, .cb-loading {
+  padding: 48px; text-align: center; color: var(--text-dim);
+}
+
+#combined-content {
+  flex: 1;
+  overflow: auto;
+  padding: 24px max(24px, calc((100% - 900px) / 2));
+  /* PDF を表す「紙」プレビュー。テーマに依らず白地・濃い文字で表示し、
+     Mermaid 図 (常に default 配色) の見た目を PDF と一致させる。 */
+  background: #fff;
+  color: #1a1a1a;
+  --text: #1a1a1a; --bg: #fff; --text-dim: #555; --border: #ccc;
+  --bg-code: #f6f8fa; --accent: #0066cc;
+}
+
+/* Combined: cover / toc / per-file separator */
+.cb-cover {
+  text-align: center;
+  padding: 72px 0 56px;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 28px;
+}
+.cb-cover-title { font-size: 30px; }
+.cb-cover-meta { color: var(--text-dim); margin-top: 8px; }
+
+.cb-toc { margin-bottom: 28px; }
+.cb-toc-title { font-size: 22px; border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 12px; }
+.cb-toc-files { list-style: none; padding-left: 0; }
+.cb-toc-file { margin: 6px 0; }
+.cb-toc-file > a { font-weight: 600; color: var(--accent); text-decoration: none; word-break: break-all; }
+.cb-toc-headings { list-style: none; padding-left: 18px; margin: 2px 0 8px; }
+.cb-toc-h a { color: var(--text-dim); text-decoration: none; font-size: 13px; }
+.cb-toc-h a:hover, .cb-toc-file > a:hover { text-decoration: underline; }
+.cb-toc-h3 { padding-left: 14px; }
+.cb-toc-h4 { padding-left: 28px; }
+.cb-toc-h5, .cb-toc-h6 { padding-left: 42px; }
+
+.cb-file { margin-bottom: 16px; }
+.cb-sep {
+  border-top: 2px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-code);
+  padding: 14px 10px;
+  margin-bottom: 20px;
+}
+.cb-sep-path { font-family: var(--font-mono); font-weight: 600; font-size: 15px; word-break: break-all; }
+.cb-sep-meta { color: var(--text-dim); font-size: 12px; margin-top: 4px; }
+
 /* ---- Print ---------------------------------------------------------------- */
 @media print {
-  #header, #sidebar, #resize-handle, #tab-bar,
+  /* 画面用レイアウトは祖先が height:100% / overflow:hidden / flex のため、
+     そのままだと本文が 1 ページ分でクリップされてしまう。印刷時は祖先チェーン
+     全体を height:auto / overflow:visible / block にリセットしてページ送りさせる。 */
+  html, body {
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff;
+    color: #000;
+  }
+
+  #header, #sidebar, #resize-handle, #tab-bar, #status-bar, #nav-buttons,
   #file-actions, #tags-bar, #note-bar, #file-info-bar, #backlinks-bar, #find-bar,
-  #outline-panel, #warning-bar, #drop-overlay { display: none !important; }
-  #main { display: block; }
-  #content { overflow: visible; }
-  #file-view { display: block !important; }
-  #preview-panel { display: block; overflow: visible; }
-  #preview-content { overflow: visible; padding: 0; }
-  body { background: #fff; color: #000; }
+  #outline-panel, #outline-resize-handle, #editor-panel,
+  #warning-bar, #drop-overlay { display: none !important; }
+
+  #app, #main, #content, #file-view, #edit-area, #preview-panel {
+    display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    flex: none !important;
+  }
+  #preview-content {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+    flex: none !important;
+    padding: 0 !important;
+  }
+
+  /* ダーク テーマでも白地・黒文字で読めるよう変数を上書き */
+  #file-view {
+    --text: #1a1a1a; --bg: #fff; --text-dim: #555; --border: #ccc;
+    --bg-code: #f6f8fa; --accent: #0066cc;
+  }
+
+  #preview-content .mermaid { break-inside: avoid; }
+
+  /* 全md結合 PDF 出力中: アプリ本体を隠し、結合プレビューのみを印刷する */
+  body.combined-printing #app,
+  body.combined-printing #linkgraph-overlay,
+  body.combined-printing #settings-panel,
+  body.combined-printing #drop-overlay { display: none !important; }
+  body.combined-printing #combined-overlay {
+    position: static;
+    display: block;
+    height: auto;
+    background: #fff;
+    /* テーマに依らず白地・黒文字で出力 */
+    --text: #1a1a1a; --bg: #fff; --text-dim: #555; --border: #ccc;
+    --bg-code: #f6f8fa; --accent: #0066cc;
+    color: #000;
+  }
+  body.combined-printing .cb-toolbar { display: none !important; }
+  body.combined-printing #combined-content {
+    overflow: visible;
+    height: auto;
+    padding: 0;
+  }
+  body.combined-printing .cb-cover,
+  body.combined-printing .cb-toc { break-after: page; }
+  body.combined-printing .cb-file { break-before: page; }
+  body.combined-printing .cb-sep { break-after: avoid; }
+  body.combined-printing .mermaid { break-inside: avoid; }
 }
 
 /* ---- Drag & drop overlay ----------------------------------------------- */
