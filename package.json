@@ -1,6 +1,6 @@
 {
   "name": "fastmd-explorer",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Lightweight Markdown file explorer and previewer",
   "type": "module",
   "packageManager": "pnpm@11.5.0+sha512.dbfcc4f81cf48597afd4bc391ffdf12c11f1a9fb83a395bfa6b0a2d9cc2fd8ffebafdb1ccbd529632153f793904c2615b7f09fe1a345473fd1c35845172a8eb1",
@@ -22,6 +22,8 @@
       "node_modules/cytoscape/dist/cytoscape.min.js",
       "node_modules/highlight.js/styles/github.css",
       "node_modules/highlight.js/styles/github-dark.css",
+      "node_modules/katex/dist/katex.min.css",
+      "node_modules/katex/dist/fonts/*.woff2",
       "src/picker.ps1",
       "mdexplorer.config.json.sample"
     ]
@@ -30,8 +32,10 @@
     "cytoscape": "^3.33.4",
     "express": "^4.22.2",
     "highlight.js": "^11.9.0",
+    "katex": "^0.17.0",
     "marked": "^12.0.0",
     "marked-highlight": "^2.1.1",
+    "marked-katex-extension": "^5.1.10",
     "mermaid": "^10.9.6",
     "open": "^10.1.0"
   },
