@@ -16,7 +16,7 @@ import {
   setCachedHtml,
 } from './fileScanner.js';
 import { loadTags, updateFileTags, renameFileTags } from './tagManager.js';
-import { getConfig, addFolderToHistory, serverConfig, saveWindowBounds } from './configManager.js';
+import { getConfig, addFolderToHistory, addUrlToHistory, serverConfig, saveWindowBounds } from './configManager.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = dirname(__dirname);
@@ -159,6 +159,39 @@ function extractFrontMatter(content) {
 function renderMarkdown(content) {
   const { entries, body } = extractFrontMatter(content);
   return renderFrontMatterTable(entries) + marked.parse(body);
+}
+
+// ---- URL モード: リモート資産のリンク解決 ---------------------------------
+// リモート md をレンダリングした HTML 内の相対 <img src> / <a href> を、
+// ソース URL 基準で絶対 URL に解決する。ブラウザが画像を直接ロードでき、
+// 相対リンク (.md など) のクリックも正しく辿れるようにする。
+// 絶対URL / data: / mailto: / tel: / プロトコル相対(//) / アンカー(#) は対象外。
+
+function decodeEntities(s) {
+  return s.replace(/&amp;/g, '&').replace(/&#39;/g, "'")
+          .replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+}
+
+function escAttr(s) {
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+}
+
+/** 相対リンクを baseUrl 基準で絶対 URL 化。解決不要/不可なら null。 */
+function toAbsoluteUrl(raw, baseUrl) {
+  if (!raw || /^(https?:|data:|mailto:|tel:|#|\/\/)/i.test(raw)) return null;
+  try { return new URL(decodeEntities(raw), baseUrl).href; } catch { return null; }
+}
+
+function rewriteRemoteAssets(html, baseUrl) {
+  html = html.replace(/<img([^>]*?)src="([^"]*)"([^>]*?)>/gi, (match, pre, src, post) => {
+    const abs = toAbsoluteUrl(src, baseUrl);
+    return abs ? `<img${pre}src="${escAttr(abs)}"${post}>` : match;
+  });
+  html = html.replace(/<a\b([^>]*?)\bhref="([^"]*)"([^>]*?)>/gi, (match, pre, href, post) => {
+    const abs = toAbsoluteUrl(href, baseUrl);
+    return abs ? `<a${pre}href="${escAttr(abs)}"${post}>` : match;
+  });
+  return html;
 }
 
 // ---- Link extraction / combined export helpers ---------------------------
@@ -325,12 +358,14 @@ export function createServer(meta = {}) {
 
   // -- State (per-process, single user) --
   let currentRoot = null;
+  let currentMode = 'folder';   // 'folder' | 'url'
+  let currentUrl  = null;       // URLモードで現在開いている md の URL
 
   // GET /api/config
   app.get('/api/config', (_req, res) => {
-    const config = getConfig();          // 履歴・lastFolder
+    const config = getConfig();          // 履歴・lastFolder・urlHistory・lastUrl・lastMode
     const srv    = serverConfig();       // port・network・theme (mdexplorer.config.json)
-    res.json({ ...srv, ...config, currentRoot });
+    res.json({ ...srv, ...config, currentRoot, currentMode, currentUrl });
   });
 
   // -- Heartbeat / lifecycle (window モード時のみ自動終了) --
@@ -391,6 +426,8 @@ export function createServer(meta = {}) {
       startedAt:      meta.startedAt ?? null,
       uptimeSec:      meta.startedAt ? Math.floor((Date.now() - meta.startedAt) / 1000) : null,
       currentFolder:  currentRoot,
+      currentMode,
+      currentUrl,
       execPath:       process.execPath,
       isPackaged:     !!process.pkg,
       windowMode:     !!meta.windowMode,
@@ -428,10 +465,64 @@ export function createServer(meta = {}) {
 
     const warnings = detectFsCrossing(folderPath);
     currentRoot = folderPath;
+    currentMode = 'folder';
+    currentUrl  = null;
     invalidateCache(folderPath); // soft: keep disk cache for fast reload after restart
     const config = await addFolderToHistory(folderPath);
 
     res.json({ path: folderPath, warnings, config });
+  });
+
+  // ---- URL モード (リモート md の閲覧) -------------------------------------
+
+  const URL_FETCH_TIMEOUT_MS = 15000;
+  const URL_MAX_BYTES = 5 * 1024 * 1024; // 5MB
+
+  function isHttpUrl(u) {
+    try { const p = new URL(u); return p.protocol === 'http:' || p.protocol === 'https:'; }
+    catch { return false; }
+  }
+
+  // POST /api/url  { url }  — URLモードに切替え、URL履歴に記録する (/api/folder と対称)
+  app.post('/api/url', async (req, res) => {
+    const url = (req.body?.url ?? '').trim();
+    if (!url) return res.status(400).json({ error: 'url が必要です' });
+    if (!isHttpUrl(url)) return res.status(400).json({ error: 'http(s):// の URL を指定してください' });
+    currentMode = 'url';
+    currentUrl  = url;
+    const config = await addUrlToHistory(url);
+    res.json({ url, config });
+  });
+
+  // GET /api/url/preview?url=...  — リモート md を取得して HTML 化する
+  // 注: ユーザー自身が入力した URL をサーバ側 fetch する。単一ユーザーの localhost
+  //     ツールのため SSRF リスクは低い。スキーム制限・タイムアウト・サイズ上限のみ施す。
+  app.get('/api/url/preview', async (req, res) => {
+    const url = req.query.url;
+    if (!url || !isHttpUrl(url)) return res.status(400).json({ error: '不正な URL です' });
+    try {
+      const resp = await fetch(url, {
+        signal: AbortSignal.timeout(URL_FETCH_TIMEOUT_MS),
+        headers: { Accept: 'text/markdown, text/plain, text/*;q=0.9, */*;q=0.5' },
+        redirect: 'follow',
+      });
+      if (!resp.ok) return res.status(502).json({ error: `取得に失敗しました (HTTP ${resp.status})` });
+
+      let content = await resp.text();
+      let truncated = false;
+      if (Buffer.byteLength(content, 'utf8') > URL_MAX_BYTES) {
+        content = Buffer.from(content, 'utf8').subarray(0, URL_MAX_BYTES).toString('utf8');
+        truncated = true;
+      }
+
+      const charCount = [...content.replace(/\s+/g, '')].length;
+      const finalUrl  = resp.url || url; // リダイレクト後の URL を相対解決の基準にする
+      const html = rewriteRemoteAssets(renderMarkdown(content), finalUrl);
+      res.json({ html, charCount, lastModified: resp.headers.get('last-modified') ?? null, finalUrl, truncated });
+    } catch (err) {
+      const msg = err?.name === 'TimeoutError' ? 'タイムアウトしました' : err.message;
+      res.status(500).json({ error: msg });
+    }
   });
 
   // GET /api/files

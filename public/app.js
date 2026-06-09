@@ -11,6 +11,10 @@ function mermaidTheme() { return state.theme === 'dark' ? 'dark' : 'default'; }
 // ---- State ---------------------------------------------------------------
 const state = {
   currentRoot:    null,
+  mode:           'folder',  // 'folder' | 'url' — 2 つの独立ワークスペース
+  currentUrl:     null,      // URLモードで現在開いている md の URL
+  folderHistory:  [],        // フォルダ履歴 (モード切替時に <select> を入替える元データ)
+  urlHistory:     [],        // URL履歴 (同上)
   tags:           {},    // { [relativePath]: { tags, flagged, note } }
   theme:          'light',
   searchQuery:    '',
@@ -112,6 +116,9 @@ const outlineResize  = $('outline-resize-handle');
 const btnFullview    = $('btn-fullview');
 const btnNavBack     = $('btn-nav-back');
 const btnNavFwd      = $('btn-nav-fwd');
+const modeToggle     = $('mode-toggle');
+const urlHistoryWrap = $('url-history-wrap');
+const urlHistoryList = $('url-history-list');
 
 // ---- API helpers ---------------------------------------------------------
 async function api(method, path, body) {
@@ -137,12 +144,24 @@ async function init() {
     state.theme = localStorage.getItem('theme') ?? config.theme ?? 'light';
     applyTheme(state.theme);
     initFontSize();
-    populateHistory(config.history ?? []);
+    state.folderHistory = config.history ?? [];
+    state.urlHistory    = config.urlHistory ?? [];
 
-    if (config.currentRoot) {
-      state.currentRoot = config.currentRoot;
-      folderInput.value = config.currentRoot;
-      await refreshTree();
+    if (config.lastMode === 'url' && config.lastUrl) {
+      // 前回 URLモードだった → URLモードで起動し、最後の URL を開く
+      applyModeUI('url');
+      populateHistory(state.urlHistory);
+      renderUrlHistory(state.urlHistory);
+      folderInput.value = config.lastUrl;
+      await openUrl(config.lastUrl);
+    } else {
+      applyModeUI('folder');
+      populateHistory(state.folderHistory);
+      if (config.currentRoot) {
+        state.currentRoot = config.currentRoot;
+        folderInput.value = config.currentRoot;
+        await refreshTree();
+      }
     }
   } catch (err) {
     showWarning(`初期化エラー: ${err.message}`, 'error');
@@ -205,11 +224,13 @@ async function openFolder(rawPath) {
   if (!path) return;
   showWarning('', '');
   try {
-    // Save current tab state before switching folder
-    if (state.currentRoot) saveTabState(state.currentRoot);
+    // Save current workspace (folder or url) before switching
+    saveTabState(workspaceKey());
+    applyModeUI('folder'); // URLモードから来た場合は表示をフォルダへ戻す
 
     const res = await post('/api/folder', { path });
     state.currentRoot = res.path;
+    state.currentUrl = null;
     state.tags = {};
     state.tabDirty = {};
     state.tabEditorText = {};
@@ -219,7 +240,9 @@ async function openFolder(rawPath) {
     state.searchQuery = '';
     searchInput.value = '';
     folderInput.value = res.path;
-    populateHistory(res.config.history ?? []);
+    state.folderHistory = res.config.history ?? state.folderHistory;
+    state.urlHistory    = res.config.urlHistory ?? state.urlHistory;
+    populateHistory(state.folderHistory);
 
     // Restore saved tab state for this folder
     const saved = loadTabState(res.path);
@@ -248,12 +271,180 @@ async function openFolder(rawPath) {
   }
 }
 
+// ---- URL mode ------------------------------------------------------------
+// フォルダモードと URLモードを 2 つの独立ワークスペースとして扱う。
+// 入力欄・履歴 <select>・サイドバー・開いているタブがモードごとに切替わる。
+
+/** 現ワークスペースの保存キー (フォルダ=ルートパス / URL='__url__')。 */
+function workspaceKey() {
+  if (state.mode === 'url') return '__url__';
+  return state.currentRoot || null;
+}
+
+/** モードに応じた UI (body クラス・トグル・placeholder) を適用。状態のみで再オープンはしない。 */
+function applyModeUI(mode) {
+  state.mode = mode;
+  document.body.classList.toggle('mode-url', mode === 'url');
+  modeToggle.querySelectorAll('.mode-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
+  folderInput.placeholder = mode === 'url'
+    ? 'md ファイルの URL を入力 (Enter で開く)...'
+    : 'フォルダパスを入力 (Enter で開く)...';
+}
+
+/** 退避済みワークスペースのタブ群を復元する (openFolder のタブ復元と同型)。 */
+function restoreWorkspaceTabs(saved) {
+  state.tabDirty = {};
+  state.tabEditorText = {};
+  state.tabNavStacks = {};
+  state.isEditing = false;
+  state.tabs = (saved?.tabs ?? []).map((t) => {
+    const tab = { id: ++_tabIdSeq, ...t };
+    state.tabNavStacks[tab.id] = { stack: [_navEntry(tab)], idx: 0 };
+    return tab;
+  });
+  state.activeTabPath = saved?.activeTabPath ?? null;
+  renderTabBar();
+}
+
+/** トグルボタン: 現ワークスペースを退避し、もう一方を復元する (再オープンはしない)。 */
+async function switchMode(newMode) {
+  if (newMode === state.mode) return;
+  saveTabState(workspaceKey());
+  applyModeUI(newMode);
+
+  if (newMode === 'url') {
+    populateHistory(state.urlHistory);
+    renderUrlHistory(state.urlHistory);
+    folderInput.value = state.currentUrl ?? '';
+    restoreWorkspaceTabs(loadTabState('__url__'));
+  } else {
+    populateHistory(state.folderHistory);
+    folderInput.value = state.currentRoot ?? '';
+    restoreWorkspaceTabs(loadTabState(state.currentRoot || null));
+    if (state.currentRoot) await refreshTree();
+    else fileTree.innerHTML = '';
+  }
+
+  updateTreeActiveState();
+  if (state.activeTabPath && activeTab()) await renderFileContent(activeTab());
+  else showEmptyState();
+}
+
+/** 入力値を判定して URL/フォルダのどちらで開くか振り分ける。 */
+function openInput(value) {
+  const v = (value ?? '').trim();
+  if (!v) return;
+  if (/^https?:\/\//i.test(v)) openUrl(v);
+  else openFolder(v);
+}
+
+/** URL からファイル名相当 (末尾セグメント or ホスト名) を取り出す。 */
+function urlFileName(url) {
+  try {
+    const u = new URL(url);
+    const last = u.pathname.split('/').filter(Boolean).pop();
+    return decodeURIComponent(last || u.hostname);
+  } catch {
+    return url.split(/[?#]/)[0].split('/').filter(Boolean).pop() || url;
+  }
+}
+
+/** リモート md を開く (openFolder と対称)。フォルダモードからの遷移も処理する。 */
+async function openUrl(rawUrl) {
+  const url = (rawUrl ?? '').trim();
+  if (!url) return;
+  showWarning('', '');
+
+  // フォルダモードから来たら現ワークスペースを退避し URLワークスペースへ
+  if (state.mode !== 'url') {
+    saveTabState(workspaceKey());
+    applyModeUI('url');
+    restoreWorkspaceTabs(loadTabState('__url__'));
+  }
+
+  try {
+    const res = await post('/api/url', { url });
+    state.currentUrl = res.url;
+    state.folderHistory = res.config.history ?? state.folderHistory;
+    state.urlHistory    = res.config.urlHistory ?? state.urlHistory;
+    populateHistory(state.urlHistory);
+    renderUrlHistory(state.urlHistory);
+    folderInput.value = res.url;
+
+    // 既に開いていれば切替、無ければ新規タブ
+    const existing = state.tabs.find((t) => t.path === res.url);
+    if (existing) { await switchToTab(res.url); return; }
+
+    const tab = { id: ++_tabIdSeq, path: res.url, relativePath: res.url, name: urlFileName(res.url), isUrl: true };
+    state.tabNavStacks[tab.id] = { stack: [_navEntry(tab)], idx: 0 };
+    state.tabs.push(tab);
+    state.activeTabPath = res.url;
+    state.isEditing = false;
+    renderTabBar();
+    await renderFileContent(tab);
+  } catch (err) {
+    showWarning(`エラー: ${err.message}`, 'error');
+  }
+}
+
+/** URLモードのサイドバー: URL履歴をクリック可能な一覧で表示する。 */
+function renderUrlHistory(list) {
+  urlHistoryList.innerHTML = '';
+  if (!list || !list.length) {
+    const empty = document.createElement('div');
+    empty.className = 'url-history-empty';
+    empty.textContent = 'URL履歴はまだありません';
+    urlHistoryList.appendChild(empty);
+    return;
+  }
+  list.forEach((u) => {
+    const item = document.createElement('div');
+    item.className = 'url-history-item' + (u === state.currentUrl ? ' active' : '');
+    item.textContent = urlFileName(u);
+    item.title = u;
+    item.addEventListener('click', () => openUrl(u));
+    urlHistoryList.appendChild(item);
+  });
+}
+
+/** URLモードのプレビュー内リンク処理 (サーバで絶対URL化済み)。 */
+function fixRemoteLinks() {
+  previewContent.querySelectorAll('a[href]').forEach((a) => {
+    const href = a.getAttribute('href');
+    if (!href || href.startsWith('#')) return;          // ページ内アンカーは既定動作
+    if (!/^https?:\/\//i.test(href)) return;            // 解決不能な相対は触らない
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (/\.(md|markdown|mdown|mkd)(?:[?#].*)?$/i.test(href)) {
+        navigateInTab({ path: href, relativePath: href, name: urlFileName(href), isUrl: true });
+      } else {
+        window.open(href, '_blank', 'noreferrer'); // 外部リンクは別タブ (アプリを離脱させない)
+      }
+    });
+  });
+}
+
+/** URLモードのファイル情報バー (Last-Modified / 文字数 / 見出し数)。 */
+function updateUrlFileInfo(lastModified, charCount) {
+  const headings = previewContent.querySelectorAll('h1,h2,h3,h4').length;
+  let datePart = '';
+  if (lastModified) {
+    const d = new Date(lastModified);
+    if (!isNaN(d.getTime())) {
+      datePart = `更新: ${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ` +
+                 `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}　`;
+    }
+  }
+  fileInfoBar.textContent = `${datePart}文字数: ${charCount ?? '—'}　見出し: ${headings}`;
+}
+
 // ---- Tab state persistence -----------------------------------------------
 
 function saveTabState(folderPath) {
   if (!folderPath) return;
   const data = {
-    tabs: state.tabs.map(({ path, relativePath, name }) => ({ path, relativePath, name })),
+    tabs: state.tabs.map(({ path, relativePath, name, isUrl }) =>
+      ({ path, relativePath, name, ...(isUrl ? { isUrl: true } : {}) })),
     activeTabPath: state.activeTabPath,
   };
   try { localStorage.setItem('tabState:' + folderPath, JSON.stringify(data)); } catch { /* quota */ }
@@ -286,6 +477,7 @@ function loadRecent() {
 }
 
 function pushRecent(file) {
+  if (state.mode === 'url' || file.isUrl) return; // URLモードは最近ファイルを記録しない
   const list = loadRecent().filter((r) => r.path !== file.path);
   list.unshift({ path: file.path, relativePath: file.relativePath, name: file.name, root: state.currentRoot });
   localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, RECENT_MAX)));
@@ -702,6 +894,33 @@ async function renderFileContent(tab, highlight = null) {
   exitEditModeUI(); // reset edit buttons
 
   updateFileHeader(tab);
+
+  // URLモード: 読み取り専用。タグ/メモ/被参照は使わず /api/url/preview で取得する。
+  if (tab.isUrl) {
+    backlinksBar.innerHTML = '';
+    backlinksBar.classList.add('hidden');
+    outlinePanel.innerHTML = '';
+    closeFindBar();
+    previewContent.innerHTML = '<div class="loading">取得中...</div>';
+    fileInfoBar.textContent = '';
+    try {
+      const { html, charCount, lastModified } = await get(`/api/url/preview?url=${encodeURIComponent(tab.path)}`);
+      previewContent.innerHTML = html;
+      previewPanel.scrollTop = 0;
+      await renderMermaid();
+      fixRemoteLinks();
+      addCopyButtons();
+      addTableSort();
+      if (highlight) highlightInPreview(highlight);
+      updateUrlFileInfo(lastModified, charCount);
+      updateOutline();
+      updateNavButtons();
+    } catch (err) {
+      previewContent.innerHTML = `<div class="error-msg">エラー: ${escHtml(err.message)}</div>`;
+    }
+    return;
+  }
+
   updateTagsBar(tab);
   updateNoteBar(tab);
 
@@ -2434,10 +2653,10 @@ function handleKey(e) {
     if (state.activeTabPath && !state.isEditing) { openFindBar(); }
     else { searchInput.focus(); searchInput.select(); }
   }
-  if (e.key === 'g') { e.preventDefault(); toggleFulltextPanel(); }
+  if (e.key === 'g' && state.mode !== 'url') { e.preventDefault(); toggleFulltextPanel(); }
   if (e.key === 's' && state.isEditing) { e.preventDefault(); saveFile(); }
-  if (e.key === 'e' && !state.isEditing && state.activeTabPath) { e.preventDefault(); enterEditMode(); }
-  if (e.key === 'i' && state.activeTabPath) { e.preventDefault(); toggleFlag(); }
+  if (e.key === 'e' && !state.isEditing && state.activeTabPath && state.mode !== 'url') { e.preventDefault(); enterEditMode(); }
+  if (e.key === 'i' && state.activeTabPath && state.mode !== 'url') { e.preventDefault(); toggleFlag(); }
   // Tab navigation: Ctrl+Tab / Ctrl+Shift+Tab
   if (e.key === 'Tab' && state.tabs.length > 1) {
     e.preventDefault();
@@ -2457,15 +2676,24 @@ function handleKey(e) {
 // ---- Event bindings ------------------------------------------------------
 function bindEvents() {
   btnBrowse.addEventListener('click', browseFolder);
-  btnOpen.addEventListener('click', () => openFolder(folderInput.value));
-  folderInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') openFolder(folderInput.value); });
+  btnOpen.addEventListener('click', () => openInput(folderInput.value));
+  folderInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') openInput(folderInput.value); });
+  modeToggle.addEventListener('click', (e) => {
+    const b = e.target.closest('.mode-btn');
+    if (b) switchMode(b.dataset.mode);
+  });
 
   historySelect.addEventListener('change', () => {
     const val = historySelect.value;
-    if (val) { folderInput.value = val; openFolder(val); historySelect.value = ''; }
+    if (val) { folderInput.value = val; openInput(val); historySelect.value = ''; }
   });
 
   const doTreeRefresh = async () => {
+    if (state.mode === 'url') {                 // URLモード: 現在の URL を再取得
+      const tab = activeTab();
+      if (tab?.isUrl) await renderFileContent(tab);
+      return;
+    }
     if (!state.currentRoot) return;
     await post('/api/refresh');
     await refreshTree();
@@ -2612,7 +2840,9 @@ function renderStatusBar() {
   if (!_statusCache) return;
   const s = _statusCache;
   statusPort.textContent   = `${s.host}:${s.port}${s.mode === 'lan' ? ' (LAN)' : ''}`;
-  statusFolder.textContent = `📂 ${shortPath(s.currentFolder)}`;
+  statusFolder.textContent = s.currentMode === 'url'
+    ? `🌐 ${shortPath(s.currentUrl)}`
+    : `📂 ${shortPath(s.currentFolder)}`;
   statusPid.textContent    = `PID ${s.pid}`;
   statusUptime.textContent = `稼働 ${formatUptime(s.uptimeSec)}`;
 }
