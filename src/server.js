@@ -7,6 +7,7 @@ import { join, dirname, relative, normalize } from 'path';
 import { fileURLToPath } from 'url';
 import { marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
+import markedKatex from 'marked-katex-extension';
 import hljs from 'highlight.js';
 import {
   scanMarkdownFiles,
@@ -68,6 +69,10 @@ marked.use({
     },
   }],
 });
+
+// LaTeX 数式: $...$ (インライン) / $$...$$ (ブロック) を KaTeX で HTML 化する。
+// サーバ側でレンダリングするため、表示には KaTeX CSS とフォント (/vendor) が必要。
+marked.use(markedKatex({ throwOnError: false }));
 
 function escHtml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -307,6 +312,15 @@ export function createServer(meta = {}) {
   });
   app.get('/vendor/hljs-dark.css', (_req, res) => {
     res.sendFile(join(ROOT_DIR, 'node_modules', 'highlight.js', 'styles', 'github-dark.css'));
+  });
+  // Vendor: KaTeX CSS + フォント (LaTeX 数式表示用)
+  app.get('/vendor/katex.min.css', (_req, res) => {
+    res.sendFile(join(ROOT_DIR, 'node_modules', 'katex', 'dist', 'katex.min.css'));
+  });
+  // katex.min.css は fonts/KaTeX_*.woff2 を相対参照する (= /vendor/fonts/...)
+  app.get('/vendor/fonts/:file', (req, res) => {
+    if (!/^KaTeX_[A-Za-z0-9-]+\.woff2$/.test(req.params.file)) return res.status(404).end();
+    res.sendFile(join(ROOT_DIR, 'node_modules', 'katex', 'dist', 'fonts', req.params.file));
   });
 
   // -- State (per-process, single user) --
