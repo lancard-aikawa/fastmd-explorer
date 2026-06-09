@@ -297,6 +297,10 @@ export function createServer(meta = {}) {
   app.get('/vendor/mermaid.min.js', (_req, res) => {
     res.sendFile(join(ROOT_DIR, 'node_modules', 'mermaid', 'dist', 'mermaid.min.js'));
   });
+  // Vendor: cytoscape UMD bundle (リンク図の力学レイアウト描画用)
+  app.get('/vendor/cytoscape.min.js', (_req, res) => {
+    res.sendFile(join(ROOT_DIR, 'node_modules', 'cytoscape', 'dist', 'cytoscape.min.js'));
+  });
   // Vendor: highlight.js CSS themes
   app.get('/vendor/hljs-light.css', (_req, res) => {
     res.sendFile(join(ROOT_DIR, 'node_modules', 'highlight.js', 'styles', 'github.css'));
