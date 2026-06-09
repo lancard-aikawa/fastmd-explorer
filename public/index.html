@@ -222,6 +222,13 @@
     <div class="lg-toolbar">
       <span class="lg-title">🕸 リンク図</span>
       <span id="lg-stats" class="lg-stats"></span>
+      <div class="lg-zoom">
+        <button id="lg-zoom-out" title="縮小">−</button>
+        <input id="lg-zoom-slider" type="range" min="0" max="1" step="0.01" value="0.5" title="ズーム">
+        <button id="lg-zoom-in" title="拡大">＋</button>
+        <button id="lg-zoom-fit" title="全体に合わせる">⤢</button>
+      </div>
+      <button id="lg-save-png" title="グラフをPNG画像で保存">PNG保存</button>
       <button id="lg-close" title="閉じる (Esc)">✕</button>
     </div>
     <div id="lg-stage">

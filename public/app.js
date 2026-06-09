@@ -46,6 +46,11 @@ const linkgraphOverlay = $('linkgraph-overlay');
 const lgGraph        = $('lg-graph');
 const lgStats        = $('lg-stats');
 const lgClose        = $('lg-close');
+const lgZoomSlider   = $('lg-zoom-slider');
+const lgZoomIn       = $('lg-zoom-in');
+const lgZoomOut      = $('lg-zoom-out');
+const lgZoomFit      = $('lg-zoom-fit');
+const lgSavePng      = $('lg-save-png');
 const combinedOverlay = $('combined-overlay');
 const combinedContent = $('combined-content');
 const cbStats        = $('cb-stats');
@@ -1027,14 +1032,43 @@ async function printActivePreview() {
 }
 
 // ---- Link graph overlay --------------------------------------------------
-// 全 .md の相互リンクを Mermaid フローチャートで図示する。
-// ボタン押下時に初めて /api/linkgraph を叩き、描画する (それまで負荷ゼロ)。
+// 全 .md の相互リンクを Cytoscape.js の力学レイアウト (cose) で図示する。
+// Mermaid フローチャートはリンク網の密なグラフでは破綻するため専用ライブラリを使う。
+// ボタン押下時に初めて cytoscape を遅延ロードし /api/linkgraph を叩く (それまで負荷ゼロ)。
 
-let _graphNodeMap = {};   // mermaid node id -> { path, relativePath, name }
+let _cy = null;
+let _cytoscapeLoading = null;
 
-function mermaidLabel(s) {
-  // Mermaid の "..." 文字列に入れられる形へ。二重引用符はエンティティ化。
-  return String(s).replace(/"/g, '#quot;').replace(/[\r\n]+/g, ' ');
+// リンク図のズーム範囲。スライダーは log スケールでこの範囲を 0..1 に対応させる。
+const LG_MIN_ZOOM = 0.05, LG_MAX_ZOOM = 4;
+
+function lgSliderToZoom(t) { return LG_MIN_ZOOM * Math.pow(LG_MAX_ZOOM / LG_MIN_ZOOM, t); }
+
+function lgSyncZoomSlider() {
+  if (!_cy) return;
+  const z = _cy.zoom();
+  const t = (Math.log(z) - Math.log(LG_MIN_ZOOM)) / (Math.log(LG_MAX_ZOOM) - Math.log(LG_MIN_ZOOM));
+  lgZoomSlider.value = String(Math.min(1, Math.max(0, t)));
+}
+
+// ビューポート中心を保ったままズーム
+function lgZoomTo(level) {
+  if (!_cy) return;
+  const z = Math.min(LG_MAX_ZOOM, Math.max(LG_MIN_ZOOM, level));
+  _cy.zoom({ level: z, renderedPosition: { x: lgGraph.clientWidth / 2, y: lgGraph.clientHeight / 2 } });
+}
+
+function loadCytoscape() {
+  if (window.cytoscape) return Promise.resolve();
+  if (_cytoscapeLoading) return _cytoscapeLoading;
+  _cytoscapeLoading = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = '/vendor/cytoscape.min.js';
+    s.onload = () => resolve();
+    s.onerror = () => { _cytoscapeLoading = null; reject(new Error('cytoscape の読み込みに失敗しました')); };
+    document.head.appendChild(s);
+  });
+  return _cytoscapeLoading;
 }
 
 async function openLinkGraph() {
@@ -1043,6 +1077,7 @@ async function openLinkGraph() {
   lgGraph.innerHTML = '<div class="lg-loading">リンクを解析中...</div>';
   lgStats.textContent = '';
   try {
+    await loadCytoscape();
     const data = await get('/api/linkgraph');
     if (!data.nodes.length) {
       lgGraph.innerHTML = '<div class="lg-empty">mdファイル間のリンクが見つかりませんでした</div>';
@@ -1050,51 +1085,88 @@ async function openLinkGraph() {
       return;
     }
 
-    _graphNodeMap = {};
     const sep = state.currentRoot.includes('\\') ? '\\' : '/';
-    const idOf = new Map();
-    data.nodes.forEach((n, i) => {
-      const id = 'g' + i;
-      idOf.set(n.rel, id);
-      _graphNodeMap[id] = {
-        path: state.currentRoot + sep + n.rel.replace(/\//g, sep),
-        relativePath: n.rel,
-        name: n.rel.split('/').pop(),
-      };
-    });
 
     // 同名ファイルはフォルダ名が無いと区別できないため、basename が重複する
-    // ノードのみ相対パス (拡張子なし) で表示して曖昧さを解消する。
+    // ノードのみ相対パス (拡張子なし) をラベルにして曖昧さを解消する。
     const baseCount = new Map();
     data.nodes.forEach((n) => baseCount.set(n.name, (baseCount.get(n.name) ?? 0) + 1));
     const labelOf = (n) => (baseCount.get(n.name) > 1
       ? n.rel.replace(/\.(md|markdown|mdown|mkd)$/i, '')
       : n.name);
 
-    const lines = ['graph LR'];
-    data.nodes.forEach((n) => lines.push(`  ${idOf.get(n.rel)}["${mermaidLabel(labelOf(n))}"]`));
-    data.edges.forEach((e) => {
-      const a = idOf.get(e.from), b = idOf.get(e.to);
-      if (a && b) lines.push(`  ${a} --> ${b}`);
-    });
-    data.nodes.forEach((n) => lines.push(`  click ${idOf.get(n.rel)} call openGraphNode()`));
+    const elements = [];
+    data.nodes.forEach((n) => elements.push({ data: {
+      id: n.rel,
+      label: labelOf(n),
+      path: state.currentRoot + sep + n.rel.replace(/\//g, sep),
+      rel: n.rel,
+      name: n.rel.split('/').pop(),
+    } }));
+    data.edges.forEach((e, i) => elements.push({ data: { id: 'e' + i, source: e.from, target: e.to } }));
 
     lgGraph.innerHTML = '';
-    const div = document.createElement('div');
-    div.className = 'mermaid';
-    div.textContent = lines.join('\n');
-    lgGraph.appendChild(div);
+    if (_cy) { _cy.destroy(); _cy = null; }
 
-    try {
-      await mermaid.run({ nodes: [div] });
-      attachMermaidZoom(div);
-    } catch (e) {
-      lgGraph.innerHTML = `<div class="error-msg">図の描画に失敗しました（ノード/エッジが多すぎる可能性があります）: ${escHtml(e?.message ?? e?.str ?? String(e))}</div>`;
-      return;
-    }
+    // テーマの CSS 変数から配色を取得 (ダーク/ライト両対応)
+    const css = getComputedStyle(document.documentElement);
+    const v = (name, fb) => (css.getPropertyValue(name).trim() || fb);
+    const accent = v('--accent', '#0078d4');
+    const text   = v('--text', '#1a1a1a');
+    const nodeBg = v('--bg-code', '#eef');
+    const edgeC  = v('--text-dim', '#888');
+    const hl     = '#f5a623';
+
+    _cy = cytoscape({
+      container: lgGraph,
+      elements,
+      minZoom: LG_MIN_ZOOM,
+      maxZoom: LG_MAX_ZOOM,
+      style: [
+        { selector: 'node', style: {
+          'background-color': nodeBg, 'border-color': accent, 'border-width': 1.5,
+          'label': 'data(label)', 'color': text, 'font-size': 11,
+          'text-valign': 'center', 'text-halign': 'center',
+          'shape': 'round-rectangle', 'width': 'label', 'height': 'label',
+          'padding': '6px', 'text-wrap': 'none',
+        } },
+        { selector: 'edge', style: {
+          'width': 1, 'line-color': edgeC, 'target-arrow-color': edgeC,
+          'target-arrow-shape': 'triangle', 'arrow-scale': 0.8, 'curve-style': 'bezier',
+        } },
+        { selector: '.faded', style: { 'opacity': 0.1 } },
+        { selector: 'node.hl', style: { 'border-color': hl, 'border-width': 3 } },
+        { selector: 'edge.hl', style: { 'line-color': hl, 'target-arrow-color': hl, 'width': 2 } },
+      ],
+      layout: {
+        name: 'cose', animate: false, randomize: true, fit: true, padding: 30,
+        nodeRepulsion: 9000, idealEdgeLength: 90, nodeOverlap: 10,
+        gravity: 0.25, componentSpacing: 70,
+      },
+    });
+
+    // ホバーで近傍 (自身＋隣接ノード＋接続エッジ) を強調し、他を淡色化
+    _cy.on('mouseover', 'node', (e) => {
+      const nb = e.target.closedNeighborhood();
+      _cy.elements().addClass('faded');
+      nb.removeClass('faded').addClass('hl');
+    });
+    _cy.on('mouseout', 'node', () => { _cy.elements().removeClass('faded hl'); });
+
+    // クリックで該当ファイルを開く (ドラッグ移動では発火しない)
+    _cy.on('tap', 'node', (e) => {
+      const d = e.target.data();
+      closeLinkGraph();
+      openFile({ path: d.path, relativePath: d.rel, name: d.name });
+    });
+
+    // ズーム操作 (ホイール/ボタン/fit) のたびにスライダーを同期
+    _cy.on('zoom', lgSyncZoomSlider);
+    _cy.one('layoutstop', lgSyncZoomSlider);
+    lgSyncZoomSlider();
 
     lgStats.textContent = data.isolatedCount
-      ? `${data.nodes.length} ファイル表示・${data.edges.length} リンク（リンクなし ${data.isolatedCount} 件は非表示）`
+      ? `${data.nodes.length} ファイル・${data.edges.length} リンク（リンクなし ${data.isolatedCount} 件は非表示）`
       : `${data.nodes.length} ファイル・${data.edges.length} リンク`;
   } catch (err) {
     lgGraph.innerHTML = `<div class="error-msg">エラー: ${escHtml(err.message)}</div>`;
@@ -1103,16 +1175,24 @@ async function openLinkGraph() {
 
 function closeLinkGraph() {
   linkgraphOverlay.classList.add('hidden');
+  if (_cy) { _cy.destroy(); _cy = null; }
   lgGraph.innerHTML = '';
 }
 
-// Mermaid の click ディレクティブから呼ばれる (securityLevel:'loose')。
-window.openGraphNode = function (nodeId) {
-  const info = _graphNodeMap[nodeId];
-  if (!info) return;
-  closeLinkGraph();
-  openFile(info);
-};
+// グラフ全体を PNG 画像として保存 (md への貼り付け・ドキュメント用)。
+// 背景は現在のテーマ色にして、ラベルが必ず読める WYSIWYG な画像にする。
+function saveLinkGraphPng() {
+  if (!_cy) { showWarning('先にリンク図を表示してください', 'warn'); return; }
+  const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#ffffff';
+  const uri = _cy.png({ full: true, scale: 2, bg });
+  const root = (state.currentRoot ?? '').replace(/[/\\]+$/, '').split(/[/\\]/).pop() || 'linkgraph';
+  const a = document.createElement('a');
+  a.href = uri;
+  a.download = `${root}-linkgraph.png`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
 
 // ---- Combined PDF overlay ------------------------------------------------
 // フォルダ内の全 .md を 1 つの結合プレビューにまとめ、印刷で PDF 化する。
@@ -2398,6 +2478,11 @@ function bindEvents() {
   // Link graph & combined PDF overlays
   btnLinkgraph.addEventListener('click', openLinkGraph);
   lgClose.addEventListener('click', closeLinkGraph);
+  lgZoomSlider.addEventListener('input', () => lgZoomTo(lgSliderToZoom(parseFloat(lgZoomSlider.value))));
+  lgZoomIn.addEventListener('click',  () => lgZoomTo((_cy?.zoom() ?? 1) * 1.3));
+  lgZoomOut.addEventListener('click', () => lgZoomTo((_cy?.zoom() ?? 1) / 1.3));
+  lgZoomFit.addEventListener('click', () => { if (_cy) { _cy.fit(undefined, 30); lgSyncZoomSlider(); } });
+  lgSavePng.addEventListener('click', saveLinkGraphPng);
   btnCombinedPdf.addEventListener('click', openCombined);
   cbClose.addEventListener('click', closeCombined);
   cbPrint.addEventListener('click', printCombined);
