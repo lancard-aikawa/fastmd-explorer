@@ -15,6 +15,10 @@
     <header id="header">
       <span class="logo">fastmd-explorer</span>
       <div id="folder-bar">
+        <div id="mode-toggle" role="group" aria-label="モード切替（フォルダ / URL）">
+          <button id="mode-btn-folder" class="mode-btn active" data-mode="folder" title="フォルダモード">フォルダ</button>
+          <button id="mode-btn-url" class="mode-btn" data-mode="url" title="URLモード">URL</button>
+        </div>
         <div id="folder-input-wrap">
           <button id="btn-browse" title="フォルダを参照...">📂</button>
           <input
@@ -24,7 +28,7 @@
             autocomplete="off"
             spellcheck="false"
           >
-          <button id="btn-open" title="フォルダを開く">開く</button>
+          <button id="btn-open" title="開く">開く</button>
         </div>
         <select id="history-select" title="履歴">
           <option value="">履歴 ▾</option>
@@ -74,6 +78,11 @@
         <div id="tag-filter-bar" class="hidden"></div>
         <div id="file-tree-wrap">
           <div id="file-tree"></div>
+        </div>
+        <!-- URL モード時のサイドバー (URL履歴一覧)。表示は body.mode-url で制御 -->
+        <div id="url-history-wrap">
+          <div class="url-history-header">URL履歴</div>
+          <div id="url-history-list"></div>
         </div>
         <div id="recent-files-panel"></div>
         <div id="sidebar-footer"></div>

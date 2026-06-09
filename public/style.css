@@ -1719,6 +1719,90 @@ body.fullview #btn-fullview:hover {
   flex-shrink: 0;
 }
 
+/* ---- URL mode ----------------------------------------------------------- */
+/* モード切替 (フォルダ | URL) — セグメント型トグル。選択中は常時ベタ塗りで明示し、
+   ネイティブ select のドロップダウン (ハイライトが OS 依存で白くなり選択が外れて
+   見える) 問題を回避する。📂参照ボタンとも見た目が被らない。 */
+#mode-toggle {
+  display: flex;
+  flex-shrink: 0;
+  border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 5px;
+  overflow: hidden;
+}
+#mode-toggle .mode-btn {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: rgba(255,255,255,0.55);
+  padding: 3px 11px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+#mode-toggle .mode-btn:hover { background: rgba(255,255,255,0.1); color: var(--text-header); }
+/* 選択中: フォルダ=ニュートラル / URL=アンバー (入力欄のアクセントと統一) */
+#mode-toggle .mode-btn.active { background: rgba(255,255,255,0.22); color: #fff; }
+#mode-toggle #mode-btn-url.active { background: #e8a33d; color: #1a1a1a; }
+
+/* URLモードでは入力欄も色で差別化し、フォーム自体で判別できるようにする */
+body.mode-url #folder-input {
+  box-shadow: inset 3px 0 0 0 #e8a33d;          /* 左端のアクセントバー */
+  border-color: rgba(232,163,61,0.55);
+}
+body.mode-url #folder-input:focus { border-color: #e8a33d; background: rgba(232,163,61,0.10); }
+body.mode-url #folder-input::placeholder { color: rgba(232,163,61,0.6); }
+
+/* URLモードのサイドバー (URL履歴一覧)。表示は body.mode-url で制御する */
+#url-history-wrap {
+  display: none;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+body.mode-url #url-history-wrap { display: flex; }
+.url-history-header {
+  padding: 6px 10px;
+  font-size: 0.72em;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#url-history-list { overflow-y: auto; }
+.url-history-item {
+  padding: 5px 12px;
+  font-size: 0.82em;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+.url-history-item:hover  { background: rgba(128,128,128,0.1); color: var(--accent); }
+.url-history-item.active { background: rgba(128,128,128,0.12); color: var(--accent); font-weight: 600; }
+.url-history-empty { padding: 8px 12px; font-size: 0.8em; color: var(--text-dim); }
+
+/* フォルダモード専用 UI は URLモードでは隠す (リモートでは無効な操作) */
+body.mode-url #btn-browse,
+body.mode-url #sidebar-top,
+body.mode-url #fulltext-panel,
+body.mode-url #tag-filter-bar,
+body.mode-url #file-tree-wrap,
+body.mode-url #recent-files-panel,
+body.mode-url #btn-linkgraph,
+body.mode-url #btn-combined-pdf,
+body.mode-url #tags-bar,
+body.mode-url #note-bar,
+body.mode-url #backlinks-bar,
+body.mode-url #btn-flag,
+body.mode-url #btn-edit,
+body.mode-url #btn-save,
+body.mode-url #btn-discard {
+  display: none !important;
+}
+
 /* Settings panel (modal) */
 #settings-panel.hidden { display: none; }
 #settings-panel {

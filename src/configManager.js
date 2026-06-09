@@ -46,9 +46,9 @@ export function serverConfig() {
 export async function loadConfig() {
   try {
     const data = await readFile(GLOBAL_FILE, 'utf8');
-    _global = { history: [], ...(JSON.parse(data)) };
+    _global = { history: [], urlHistory: [], ...(JSON.parse(data)) };
   } catch {
-    _global = { history: [] };
+    _global = { history: [], urlHistory: [] };
   }
   return _global;
 }
@@ -66,6 +66,20 @@ export async function addFolderToHistory(folderPath) {
   if (history.length > MAX_HISTORY) history.splice(MAX_HISTORY);
   config.history   = history;
   config.lastFolder = folderPath;
+  config.lastMode   = 'folder';
+  await saveConfig(config);
+  return config;
+}
+
+/** URL 履歴に追加 (フォルダ履歴と独立)。URLモードの "最後に開いた URL" も記録する。 */
+export async function addUrlToHistory(url) {
+  const config = _global ?? await loadConfig();
+  const urlHistory = (config.urlHistory ?? []).filter((u) => u !== url);
+  urlHistory.unshift(url);
+  if (urlHistory.length > MAX_HISTORY) urlHistory.splice(MAX_HISTORY);
+  config.urlHistory = urlHistory;
+  config.lastUrl    = url;
+  config.lastMode   = 'url';
   await saveConfig(config);
   return config;
 }
@@ -78,7 +92,7 @@ export async function saveWindowBounds(bounds) {
 }
 
 export function getConfig() {
-  return _global ?? { history: [] };
+  return _global ?? { history: [], urlHistory: [] };
 }
 
 export function getConfigPaths() {
