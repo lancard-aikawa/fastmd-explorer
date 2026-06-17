@@ -1210,12 +1210,34 @@ function attachMermaidZoom(container) {
     container.appendChild(controls);
 }
 
+// ---- Print title (PDF 既定保存名) ----------------------------------------
+// PDF として保存する際の既定ファイル名はブラウザが document.title から決める。
+// 印刷直前にアクティブファイル名へ差し替え、afterprint で元 (fastmd-explorer)
+// へ戻す。保存名には .pdf が付くため .md/.markdown 拡張子は取り除く。
+function setPrintTitle(name) {
+  if (!name) return;
+  const original = document.title;
+  document.title = name;
+  const restore = () => {
+    window.removeEventListener('afterprint', restore);
+    document.title = original;
+  };
+  window.addEventListener('afterprint', restore);
+}
+
+function printTitleFromTab(tab) {
+  if (!tab?.name) return null;
+  return tab.name.replace(/\.(md|markdown)$/i, '');
+}
+
 // ---- Mermaid print handling ----------------------------------------------
 // 個別ファイルの印刷/PDF出力。ダークテーマだと図が白地で読めないため、印刷時だけ
 // 図を白地 (default) 配色の SVG に描き直す。描き直しは図ごとに初回 1 回のみで、
 // 以降はテーマ別にキャッシュした SVG を innerHTML で差し替えるだけ (再描画なし)。
 // 図はベクターのまま印刷する (送信先「PDF として保存」なら高速・鮮明・軽量)。
 async function printActivePreview() {
+  setPrintTitle(printTitleFromTab(activeTab()));
+
   // ライトテーマは既に白地配色なので描き直し不要 → そのまま印刷
   if (mermaidTheme() === 'default') { window.print(); return; }
 
@@ -1462,6 +1484,9 @@ function closeCombined() {
 }
 
 function printCombined() {
+  // 結合印刷はフォルダ全体が対象 → 保存名はルートフォルダ名 (取れなければ既定のまま)
+  const root = state.currentRoot?.split(/[\\/]/).filter(Boolean).pop();
+  setPrintTitle(root ? `${root}-結合` : null);
   document.body.classList.add('combined-printing');
   const cleanup = () => {
     document.body.classList.remove('combined-printing');
