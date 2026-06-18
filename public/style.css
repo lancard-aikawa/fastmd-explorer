@@ -1647,6 +1647,12 @@ body.fullview #btn-fullview:hover {
     break-after: page;
   }
 
+  /* 設定「YAMLヘッダーの後で改ページ」: front matter テーブルを 1 ページ目に
+     分離し、本文を次ページから始める。 */
+  body[data-print-fm="1"] #preview-content table.front-matter {
+    break-after: page;
+  }
+
   /* 設定「ページ途中で分割しない」: コード・表・画像・図・引用をページ境界で割らない。
      (.mermaid は上で常に avoid 済み) */
   body[data-print-keep="1"] #preview-content pre,

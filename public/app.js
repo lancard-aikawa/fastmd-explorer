@@ -2921,6 +2921,7 @@ function applyPrintPageBreak(level) {
 // dataset.X ↔ data-x (例: printHeadingKeep ↔ data-print-heading-keep)。
 const PRINT_TOGGLES = [
   { id: 'setting-print-hr',           attr: 'printHr',          key: 'printHr',          def: '0' },
+  { id: 'setting-print-fm',           attr: 'printFm',          key: 'printFm',          def: '0' },
   { id: 'setting-print-keep',         attr: 'printKeep',        key: 'printKeep',        def: '1' },
   { id: 'setting-print-heading-keep', attr: 'printHeadingKeep', key: 'printHeadingKeep', def: '1' },
   { id: 'setting-print-linkurl',      attr: 'printLinkurl',     key: 'printLinkurl',     def: '0' },
