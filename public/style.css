@@ -1623,6 +1623,53 @@ body.fullview #btn-fullview:hover {
 
   #preview-content .mermaid { break-inside: avoid; }
 
+  /* hr は既定の #ccc・1px だと、縮小される印刷プレビューで細く薄くなり見えづらい。
+     原寸の PDF では出ているが分かりにくいので、印刷時はやや濃く・太くする。 */
+  #preview-content hr {
+    border-top: 2px solid #999;
+  }
+
+  /* 設定「見出しで改ページ」: 選択レベルの見出しの 2 つ目以降の前で改ページ。
+     :not(:first-of-type) で最初の見出しを除外し、先頭の空ページを防ぐ。 */
+  body[data-print-pb="1"] #preview-content h1:not(:first-of-type),
+  body[data-print-pb="2"] #preview-content h2:not(:first-of-type),
+  body[data-print-pb="3"] #preview-content h3:not(:first-of-type),
+  body[data-print-pb="4"] #preview-content h4:not(:first-of-type),
+  body[data-print-pb="5"] #preview-content h5:not(:first-of-type),
+  body[data-print-pb="6"] #preview-content h6:not(:first-of-type) {
+    break-before: page;
+  }
+
+  /* 設定「水平線 (---) で改ページ」: hr を改ページ位置として扱う。
+     線は通常どおり表示したうえで改ページする (線が消えると、線無しで
+     改ページだけ起きて分かりにくいため)。 */
+  body[data-print-hr="1"] #preview-content hr {
+    break-after: page;
+  }
+
+  /* 設定「ページ途中で分割しない」: コード・表・画像・図・引用をページ境界で割らない。
+     (.mermaid は上で常に avoid 済み) */
+  body[data-print-keep="1"] #preview-content pre,
+  body[data-print-keep="1"] #preview-content table,
+  body[data-print-keep="1"] #preview-content img,
+  body[data-print-keep="1"] #preview-content figure,
+  body[data-print-keep="1"] #preview-content blockquote {
+    break-inside: avoid;
+  }
+
+  /* 設定「見出しをページ末尾に単独で残さない」: 見出し直後で改ページしない。 */
+  body[data-print-heading-keep="1"] #preview-content :is(h1, h2, h3, h4, h5, h6) {
+    break-after: avoid;
+  }
+
+  /* 設定「リンクの URL を併記」: 紙/PDF では押せないため URL を展開表示する。 */
+  body[data-print-linkurl="1"] #preview-content a[href^="http"]::after {
+    content: " <" attr(href) ">";
+    font-size: 0.85em;
+    color: #555;
+    word-break: break-all;
+  }
+
   /* 全md結合 PDF 出力中: アプリ本体を隠し、結合プレビューのみを印刷する */
   body.combined-printing #app,
   body.combined-printing #linkgraph-overlay,
@@ -1852,6 +1899,33 @@ body.mode-url #btn-discard {
   line-height: 1;
 }
 #btn-settings-close:hover { color: var(--accent); background: transparent; }
+.settings-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: var(--text-dim);
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+.settings-tab:hover {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text);
+}
+.settings-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
 .settings-body {
   padding: 12px 16px 16px;
   overflow-y: auto;
@@ -1881,8 +1955,31 @@ body.mode-url #btn-discard {
   margin: 0;
   word-break: break-all;
 }
+.settings-body select {
+  font: inherit;
+  padding: 2px 6px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
 .settings-hint {
   margin: 8px 0 0;
   font-size: 11px;
   color: var(--text-dim);
 }
+.settings-checks {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+.settings-checks label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.settings-checks input { cursor: pointer; }

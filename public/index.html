@@ -265,20 +265,51 @@
         <h3>設定とシステム情報</h3>
         <button id="btn-settings-close" title="閉じる">×</button>
       </div>
+      <div class="settings-tabs" role="tablist">
+        <button class="settings-tab active" data-tab="print" role="tab">印刷</button>
+        <button class="settings-tab" data-tab="system" role="tab">システム情報</button>
+      </div>
       <div class="settings-body">
-        <section>
-          <h4>サーバ</h4>
-          <dl id="settings-server"></dl>
-        </section>
-        <section>
-          <h4>プロセス</h4>
-          <dl id="settings-process"></dl>
-        </section>
-        <section>
-          <h4>設定ファイル</h4>
-          <dl id="settings-paths"></dl>
-          <p class="settings-hint">設定変更には設定ファイルを直接編集し、再起動が必要です。</p>
-        </section>
+        <div class="settings-tabpanel" data-panel="print">
+          <section>
+            <dl>
+              <dt>見出しで改ページ</dt>
+              <dd>
+                <select id="setting-print-pb" title="見出しで改ページ">
+                  <option value="0">改ページしない</option>
+                  <option value="1">見出し1</option>
+                  <option value="2">見出し2</option>
+                  <option value="3">見出し3</option>
+                  <option value="4">見出し4</option>
+                  <option value="5">見出し5</option>
+                  <option value="6">見出し6</option>
+                </select>
+              </dd>
+            </dl>
+            <p class="settings-hint">選択した見出しの2つ目以降の前で改ページします（印刷／PDF出力時。最初の見出しは改ページしません）。</p>
+            <div class="settings-checks">
+              <label><input type="checkbox" id="setting-print-hr"> 水平線 (---) で改ページする</label>
+              <label><input type="checkbox" id="setting-print-keep"> コード・表・画像・図をページ途中で分割しない</label>
+              <label><input type="checkbox" id="setting-print-heading-keep"> 見出しをページ末尾に単独で残さない</label>
+              <label><input type="checkbox" id="setting-print-linkurl"> リンクの URL を併記する</label>
+            </div>
+          </section>
+        </div>
+        <div class="settings-tabpanel hidden" data-panel="system">
+          <section>
+            <h4>サーバ</h4>
+            <dl id="settings-server"></dl>
+          </section>
+          <section>
+            <h4>プロセス</h4>
+            <dl id="settings-process"></dl>
+          </section>
+          <section>
+            <h4>設定ファイル</h4>
+            <dl id="settings-paths"></dl>
+            <p class="settings-hint">設定変更には設定ファイルを直接編集し、再起動が必要です。</p>
+          </section>
+        </div>
       </div>
     </div>
   </div>

@@ -30,6 +30,8 @@ const state = {
   tabNavStacks:   {},    // { [tab.id]: { stack: [{path,name,relativePath},...], idx: number } }
   isEditing:      false,
   showImages:     localStorage.getItem('showImages') === '1',
+  // 印刷時に改ページする見出しレベル ('0'=しない, '1'..'6'=見出しN)。既定は見出し1
+  printPageBreak: localStorage.getItem('printPageBreak') ?? '1',
 };
 
 // ---- DOM refs ------------------------------------------------------------
@@ -64,6 +66,7 @@ const btnTheme       = $('btn-theme');
 const btnSettings    = $('btn-settings');
 const settingsPanel  = $('settings-panel');
 const btnSettingsClose = $('btn-settings-close');
+const settingPrintPb = $('setting-print-pb');
 const statusPort     = $('status-port');
 const statusFolder   = $('status-folder');
 const statusPid      = $('status-pid');
@@ -2904,6 +2907,54 @@ function closeSettings() {
   settingsPanel.classList.add('hidden');
 }
 
+// 印刷時の見出し改ページ設定を body 属性へ反映する。CSS (@media print) が
+// この属性を見て改ページするため、アプリの印刷ボタンでもブラウザの Ctrl+P でも効く。
+function applyPrintPageBreak(level) {
+  state.printPageBreak = level;
+  localStorage.setItem('printPageBreak', level);
+  if (level && level !== '0') document.body.dataset.printPb = level;
+  else delete document.body.dataset.printPb;
+}
+
+// 印刷の ON/OFF トグル設定。チェック状態を localStorage と body 属性へ反映する
+// (style.css の @media print が body[data-...] を見て効く)。
+// dataset.X ↔ data-x (例: printHeadingKeep ↔ data-print-heading-keep)。
+const PRINT_TOGGLES = [
+  { id: 'setting-print-hr',           attr: 'printHr',          key: 'printHr',          def: '0' },
+  { id: 'setting-print-keep',         attr: 'printKeep',        key: 'printKeep',        def: '1' },
+  { id: 'setting-print-heading-keep', attr: 'printHeadingKeep', key: 'printHeadingKeep', def: '1' },
+  { id: 'setting-print-linkurl',      attr: 'printLinkurl',     key: 'printLinkurl',     def: '0' },
+];
+
+function setPrintToggle(t, on) {
+  localStorage.setItem(t.key, on ? '1' : '0');
+  if (on) document.body.dataset[t.attr] = '1';
+  else delete document.body.dataset[t.attr];
+}
+
+// 設定パネルのタブ切り替え (印刷 / システム情報)
+function initSettingsTabs() {
+  const tabs = settingsPanel.querySelectorAll('.settings-tab');
+  const panels = settingsPanel.querySelectorAll('.settings-tabpanel');
+  tabs.forEach((tab) => {
+    tab.addEventListener('click', () => {
+      tabs.forEach((t) => t.classList.toggle('active', t === tab));
+      panels.forEach((p) => p.classList.toggle('hidden', p.dataset.panel !== tab.dataset.tab));
+    });
+  });
+}
+
+function initPrintToggles() {
+  for (const t of PRINT_TOGGLES) {
+    const el = $(t.id);
+    if (!el) continue;
+    const on = (localStorage.getItem(t.key) ?? t.def) === '1';
+    el.checked = on;
+    setPrintToggle(t, on);
+    el.addEventListener('change', () => setPrintToggle(t, el.checked));
+  }
+}
+
 function initStatusAndSettings() {
   btnSettings.addEventListener('click', openSettings);
   btnSettingsClose.addEventListener('click', closeSettings);
@@ -2911,6 +2962,12 @@ function initStatusAndSettings() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !settingsPanel.classList.contains('hidden')) closeSettings();
   });
+
+  initSettingsTabs();
+  applyPrintPageBreak(state.printPageBreak);
+  settingPrintPb.value = state.printPageBreak;
+  settingPrintPb.addEventListener('change', () => applyPrintPageBreak(settingPrintPb.value));
+  initPrintToggles();
 
   refreshStatus();
   setInterval(refreshStatus, 10_000);
