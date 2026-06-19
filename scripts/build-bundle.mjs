@@ -26,12 +26,17 @@ await build({
 // pkg は entry の隣にある .pkgrc.json を auto-discover するので、
 // src/_bundle.cjs と並べて src/.pkgrc.json を生成する。
 // assets パスは src/ ディレクトリからの相対パス (= `../<repo-root-relative>`)。
+// server.js が /vendor で配信する依存はすべてここに列挙する
+// (列挙漏れがあると dev では動くが exe で 404 になる)。
 const pkgrc = {
   assets: [
     '../public/**/*',
     '../node_modules/mermaid/dist/mermaid.min.js',
+    '../node_modules/cytoscape/dist/cytoscape.min.js',
     '../node_modules/highlight.js/styles/github.css',
     '../node_modules/highlight.js/styles/github-dark.css',
+    '../node_modules/katex/dist/katex.min.css',
+    '../node_modules/katex/dist/fonts/*.woff2',
     '../mdexplorer.config.json.sample',
     'picker.ps1',
   ],

@@ -7,6 +7,11 @@
 
 ## [未リリース]
 
+## [1.5.2] - 2026-06-19
+
+### 修正
+- exe 版でリンク図 (🕸) が「cytoscape の読み込みに失敗しました」となる問題を修正。ビルド時のアセット一覧 (`.pkgrc.json`) に cytoscape と katex (CSS・フォント) が含まれておらず、exe に同梱されていなかった（dev では発生せず、v1.2.0〜v1.5.1 の exe が対象）。あわせて exe 版の LaTeX 数式のスタイル／フォントも修正。
+
 ## [1.5.1] - 2026-06-18
 
 ### 追加
@@ -85,7 +90,8 @@
   - 設定パネル・ステータスバー
   - 単一 exe ビルド (@yao-pkg/pkg + esbuild)、pnpm 化
 
-[未リリース]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.5.1...HEAD
+[未リリース]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.5.2...HEAD
+[1.5.2]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.5.1...v1.5.2
 [1.5.1]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.4.0...v1.4.1
