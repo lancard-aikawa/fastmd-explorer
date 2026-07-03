@@ -821,8 +821,23 @@ select { cursor: pointer; }
 }
 .dir-badge-md  { background: rgba(59,130,246,0.15); color: #3b82f6; }
 .dir-badge-img { background: rgba(16,185,129,0.15); color: #10b981; }
+.dir-badge-html { background: rgba(245,158,11,0.15); color: #d97706; }
 [data-theme="dark"] .dir-badge-md  { background: rgba(96,165,250,0.2); color: #60a5fa; }
 [data-theme="dark"] .dir-badge-img { background: rgba(52,211,153,0.2); color: #34d399; }
+[data-theme="dark"] .dir-badge-html { background: rgba(251,191,36,0.2); color: #fbbf24; }
+
+/* HTML ファイル行: 先頭に 🌐 と 'html' チップ */
+.tree-file-html .file-name::before { content: '🌐'; margin-right: 4px; font-size: 0.9em; }
+.html-chip {
+  font-size: 0.7em;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: rgba(245,158,11,0.15);
+  color: #d97706;
+  flex-shrink: 0;
+}
+[data-theme="dark"] .html-chip { background: rgba(251,191,36,0.2); color: #fbbf24; }
+.tree-file-html.active .html-chip { background: rgba(255,255,255,0.2); color: #fff; }
 
 .dir-arrow { font-size: 0.8em; width: 1em; flex-shrink: 0; color: var(--accent); }
 .dir-name { font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1330,6 +1345,19 @@ mark.find-hl-active {
   min-width: 0;
   overflow-y: auto;
   padding: 20px 28px;
+}
+/* .html ファイル表示中: iframe をパネル全体に広げる */
+#preview-content.html-mode {
+  flex: 1 1 auto;
+  padding: 0;
+  overflow: hidden;
+}
+.html-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
 }
 #outline-panel:empty { display: none; }
 #outline-panel {

@@ -30,6 +30,7 @@ const state = {
   tabNavStacks:   {},    // { [tab.id]: { stack: [{path,name,relativePath},...], idx: number } }
   isEditing:      false,
   showImages:     localStorage.getItem('showImages') === '1',
+  showHtml:       localStorage.getItem('showHtml') === '1',
   // 印刷時に改ページする見出しレベル ('0'=しない, '1'..'6'=見出しN)。既定は見出し1
   printPageBreak: localStorage.getItem('printPageBreak') ?? '1',
 };
@@ -79,6 +80,7 @@ const recentPanel    = $('recent-files-panel');
 const searchInput    = $('search-input');
 const btnFulltext    = $('btn-fulltext');
 const btnShowImages  = $('btn-show-images');
+const btnShowHtml    = $('btn-show-html');
 const fulltextPanel  = $('fulltext-panel');
 const fulltextInput  = $('fulltext-input');
 const fulltextResults = $('fulltext-results');
@@ -603,6 +605,9 @@ function renderChildren(children, ul, forceExpand = false) {
     } else if (child.type === 'image') {
       if (state.showImages) li.appendChild(makeImageEl(child));
       else return; // skip
+    } else if (child.type === 'html') {
+      if (state.showHtml) li.appendChild(makeHtmlEl(child));
+      else return; // skip
     } else {
       li.appendChild(makeFileEl(child));
     }
@@ -633,6 +638,38 @@ function makeImageEl(file) {
   return div;
 }
 
+function makeHtmlEl(file) {
+  const isActive = state.activeTabPath === file.path;
+
+  const div = document.createElement('div');
+  div.className = 'tree-file tree-file-html' + (isActive ? ' active' : '');
+  div.dataset.path = file.path;
+  div.dataset.rel  = file.relativePath;
+
+  const name = document.createElement('span');
+  name.className = 'file-name';
+  name.textContent = file.name;
+
+  const badge = document.createElement('span');
+  badge.className = 'file-meta';
+  const chip = document.createElement('span');
+  chip.className = 'html-chip';
+  chip.textContent = 'html';
+  badge.appendChild(chip);
+
+  div.appendChild(name);
+  div.appendChild(badge);
+  div.addEventListener('click', () => openFile({ ...file, isHtml: true }));
+  div.addEventListener('contextmenu', (e) => {
+    e.stopPropagation();
+    showContextMenu(e, [
+      { label: 'リネーム', action: () => fsRename(file.path, true, div.querySelector('.file-name')) },
+      { label: '削除',     action: () => fsDelete(file.path, true), danger: true },
+    ]);
+  });
+  return div;
+}
+
 function makeDirEl(dir, forceExpand = false) {
   const id = dir.path;
   const expanded = forceExpand || state.expandedDirs.has(id);
@@ -642,7 +679,8 @@ function makeDirEl(dir, forceExpand = false) {
   const row = document.createElement('div');
   row.className = 'tree-dir';
   const badges = (dir.hasMd ? '<span class="dir-badge dir-badge-md">md</span>' : '')
-               + (dir.hasImages ? '<span class="dir-badge dir-badge-img">img</span>' : '');
+               + (dir.hasImages ? '<span class="dir-badge dir-badge-img">img</span>' : '')
+               + (dir.hasHtml && state.showHtml ? '<span class="dir-badge dir-badge-html">html</span>' : '');
   row.innerHTML = `<span class="dir-arrow">${expanded ? '▾' : '▸'}</span><span class="dir-name">${escHtml(dir.name)}</span>${badges}`;
 
   const childUl = document.createElement('ul');
@@ -895,6 +933,7 @@ async function openFile(file) {
 async function renderFileContent(tab, highlight = null) {
   showFileView();
   exitEditModeUI(); // reset edit buttons
+  previewContent.classList.remove('html-mode'); // .html iframe モードをリセット
 
   updateFileHeader(tab);
 
@@ -935,7 +974,23 @@ async function renderFileContent(tab, highlight = null) {
   closeFindBar();
 
   try {
-    const { html, mtime, charCount } = await get(`/api/preview?path=${encodeURIComponent(tab.path)}`);
+    const { html, mtime, charCount, isHtml } = await get(`/api/preview?path=${encodeURIComponent(tab.path)}`);
+    if (isHtml) {
+      // .html は sandbox iframe で隔離描画 (ページ自身の CSS/JS がアプリと衝突しない)
+      previewContent.classList.add('html-mode');
+      previewContent.innerHTML = '';
+      const frame = document.createElement('iframe');
+      frame.className = 'html-frame';
+      // allow-scripts のみ (allow-same-origin は付けない = null オリジンで親に触れない)
+      frame.setAttribute('sandbox', 'allow-scripts allow-popups allow-popups-to-escape-sandbox');
+      frame.srcdoc = html;
+      previewContent.appendChild(frame);
+      previewPanel.scrollTop = 0;
+      updateFileInfo(mtime, charCount);
+      updateNavButtons();
+      return;
+    }
+    previewContent.classList.remove('html-mode');
     previewContent.innerHTML = html;
     previewPanel.scrollTop = 0;
     await renderMermaid();
@@ -948,6 +1003,7 @@ async function renderFileContent(tab, highlight = null) {
     updateBacklinks(tab.path);
     updateNavButtons();
   } catch (err) {
+    previewContent.classList.remove('html-mode');
     previewContent.innerHTML = `<div class="error-msg">エラー: ${escHtml(err.message)}</div>`;
   }
 }
@@ -1637,14 +1693,16 @@ function fixLocalLinks() {
     if (!href || /^https?:\/\//.test(href) || href.startsWith('#')) return;
     a.addEventListener('click', (e) => {
       e.preventDefault();
-      if (/\.(md|markdown|mdown|mkd)$/i.test(href)) {
+      const cleanHref = href.split(/[?#]/)[0]; // query/anchor を除去
+      // .md 系と .html/.htm は同一ウィンドウ内でビューア表示 (サーバURLへ遷移させない)
+      if (/\.(md|markdown|mdown|mkd|html?)$/i.test(cleanHref)) {
         const baseParts = (state.activeTabPath ?? '').replace(/\\/g, '/').split('/');
         baseParts.pop();
-        const resolved = [...baseParts, ...href.split('/')].join('/');
+        const resolved = [...baseParts, ...cleanHref.split('/')].join('/');
         const sep = state.currentRoot?.includes('\\') ? '\\' : '/';
         const resolvedNative = resolved.replace(/\//g, sep);
         const rel = resolved.replace((state.currentRoot ?? '').replace(/\\/g, '/') + '/', '');
-        navigateInTab({ path: resolvedNative, relativePath: rel, name: href.split('/').pop() });
+        navigateInTab({ path: resolvedNative, relativePath: rel, name: cleanHref.split('/').pop() });
       } else {
         window.open(href, '_blank', 'noreferrer');
       }
@@ -2809,6 +2867,15 @@ function bindEvents() {
     state.showImages = !state.showImages;
     localStorage.setItem('showImages', state.showImages ? '1' : '0');
     btnShowImages.classList.toggle('active', state.showImages);
+    refreshTree();
+  });
+
+  // HTML toggle
+  btnShowHtml.classList.toggle('active', state.showHtml);
+  btnShowHtml.addEventListener('click', () => {
+    state.showHtml = !state.showHtml;
+    localStorage.setItem('showHtml', state.showHtml ? '1' : '0');
+    btnShowHtml.classList.toggle('active', state.showHtml);
     refreshTree();
   });
 

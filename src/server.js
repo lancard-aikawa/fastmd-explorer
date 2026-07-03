@@ -575,6 +575,11 @@ export function createServer(meta = {}) {
       const fileStat = await stat(filePath);
       const content = await readFile(filePath, 'utf8');
       const charCount = [...content.replace(/\s+/g, '')].length;
+      // .html / .htm はそのまま (sandbox iframe で隔離描画するため markdown 化しない)
+      if (/\.html?$/i.test(filePath)) {
+        const html = rewriteImageSrcs(content, dirname(filePath));
+        return res.json({ html, mtime: fileStat.mtimeMs, charCount, isHtml: true });
+      }
       const cached = getCachedHtml(filePath, fileStat.mtimeMs);
       const rawHtml = cached ?? renderMarkdown(content);
       if (!cached) setCachedHtml(filePath, fileStat.mtimeMs, rawHtml);

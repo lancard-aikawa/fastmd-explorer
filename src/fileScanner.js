@@ -14,8 +14,12 @@ const htmlCache = new Map();
 const SKIP_DIRS = new Set(['node_modules', '.git', '.svn', '__pycache__', 'dist', 'build', '.next', '.nuxt']);
 const MD_EXTS    = new Set(['.md', '.markdown', '.mdown', '.mkd']);
 export const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp']);
+export const HTML_EXTS  = new Set(['.html', '.htm']);
 
 // ---- Disk cache -----------------------------------------------------------
+// ツリーノードの形が変わったら bump する。旧キャッシュを無効化して再スキャンさせる。
+// v2: html ファイル (type:'html' / hasHtml) 対応で追加
+const SCHEMA_VERSION = 2;
 const TREE_CACHE_DIR = join(homedir(), '.mdexplorer', 'tree-cache');
 
 function diskCachePath(rootPath) {
@@ -28,7 +32,7 @@ async function loadDiskCache(rootPath, mtime) {
   try {
     const raw = await readFile(diskCachePath(rootPath), 'utf8');
     const data = JSON.parse(raw);
-    if (data.mtime === mtime) return data;
+    if (data.version === SCHEMA_VERSION && data.mtime === mtime) return data;
   } catch { /* miss or stale */ }
   return null;
 }
@@ -61,7 +65,7 @@ export async function scanMarkdownFiles(rootPath) {
 
   // 1. In-memory cache hit
   const cached = treeCache.get(rootPath);
-  if (cached && cached.mtime === rootStat.mtimeMs) {
+  if (cached && cached.version === SCHEMA_VERSION && cached.mtime === rootStat.mtimeMs) {
     return { tree: cached.tree, fileCount: cached.fileCount, warnings: cached.warnings };
   }
 
@@ -80,7 +84,7 @@ export async function scanMarkdownFiles(rootPath) {
     fileCount++;
   });
 
-  const result = { mtime: rootStat.mtimeMs, tree, fileCount, warnings };
+  const result = { version: SCHEMA_VERSION, mtime: rootStat.mtimeMs, tree, fileCount, warnings };
   treeCache.set(rootPath, result);
   saveDiskCache(rootPath, result);   // persist for next server start
   return { tree, fileCount, warnings };
@@ -127,6 +131,8 @@ async function scanDir(dirPath, rootPath, originalRoot, warnings, onFile) {
         files.push({ type: 'file', name, relativePath: relative(rootPath, fullPath) });
       } else if (IMAGE_EXTS.has(ext)) {
         files.push({ type: 'image', name, relativePath: relative(rootPath, fullPath) });
+      } else if (HTML_EXTS.has(ext)) {
+        files.push({ type: 'html', name, relativePath: relative(rootPath, fullPath) });
       }
     }
   }
@@ -143,6 +149,7 @@ async function scanDir(dirPath, rootPath, originalRoot, warnings, onFile) {
 
   const hasMd     = files.some((f) => f.type === 'file')   || dirs.some((d) => d.hasMd);
   const hasImages = files.some((f) => f.type === 'image')  || dirs.some((d) => d.hasImages);
+  const hasHtml   = files.some((f) => f.type === 'html')   || dirs.some((d) => d.hasHtml);
 
   return {
     type: 'dir',
@@ -151,6 +158,7 @@ async function scanDir(dirPath, rootPath, originalRoot, warnings, onFile) {
     children: [...dirs, ...files],
     hasMd,
     hasImages,
+    hasHtml,
   };
 }
 
