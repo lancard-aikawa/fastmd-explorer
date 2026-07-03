@@ -7,6 +7,11 @@
 
 ## [未リリース]
 
+## [1.6.0] - 2026-07-03
+
+### 追加
+- HTML ファイル (.html/.htm) の閲覧表示（既定 OFF、ツールバーの「HTML」ボタンで表示/非表示を切替）。ページ自身の CSS/JS を保ったまま sandbox iframe で隔離表示するため、アプリのスタイルと衝突しない。Markdown 内のローカル html リンクからも同一ウィンドウ内で開ける。
+
 ## [1.5.2] - 2026-06-19
 
 ### 修正
@@ -90,7 +95,8 @@
   - 設定パネル・ステータスバー
   - 単一 exe ビルド (@yao-pkg/pkg + esbuild)、pnpm 化
 
-[未リリース]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.5.2...HEAD
+[未リリース]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.5.2...v1.6.0
 [1.5.2]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.5.1...v1.5.2
 [1.5.1]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.4.1...v1.5.0
