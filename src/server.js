@@ -357,9 +357,10 @@ export function createServer(meta = {}) {
   });
 
   // -- State (per-process, single user) --
-  let currentRoot = null;
-  let currentMode = 'folder';   // 'folder' | 'url'
-  let currentUrl  = null;       // URLモードで現在開いている md の URL
+  // 起動引数 (initialRoot / initialUrl) があれば初期表示に使う。
+  let currentRoot = meta.initialRoot ?? null;
+  let currentMode = meta.initialUrl ? 'url' : 'folder';   // 'folder' | 'url'
+  let currentUrl  = meta.initialUrl ?? null;              // URLモードで現在開いている md の URL
 
   // GET /api/config
   app.get('/api/config', (_req, res) => {

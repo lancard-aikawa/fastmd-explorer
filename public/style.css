@@ -866,6 +866,10 @@ select { cursor: pointer; }
 .tree-file.active .tag-chip { background: rgba(255,255,255,0.2); color: #fff; border-color: rgba(255,255,255,0.3); }
 .tree-file.active .flag-star { color: #ffe066; }
 
+/* キーボードナビのカーソル位置 (currentColor で active/非active どちらでも視認可) */
+#file-tree { outline: none; }
+.tree-cursor { outline: 2px solid currentColor; outline-offset: -2px; border-radius: 4px; }
+
 /* Image items in tree */
 .tree-image {
   display: flex;

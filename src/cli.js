@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { networkInterfaces, tmpdir, homedir } from 'os';
-import { existsSync, createWriteStream } from 'fs';
+import { existsSync, statSync, createWriteStream } from 'fs';
 import { spawn } from 'child_process';
 import { createServer } from './server.js';
 import { loadConfig, loadLocalConfig, serverConfig, getConfigPaths, getConfig } from './configManager.js';
@@ -34,12 +34,17 @@ async function main() {
   const MODE = (process.env.NETWORK ?? cfg.network ?? 'local').toLowerCase();
   const HOST = MODE === 'lan' ? '0.0.0.0' : '127.0.0.1';
 
+  // 起動引数: フォルダパス または http(s) URL を初期表示に使う。
+  //   例) fastmd-explorer C:\docs   /   fastmd-explorer https://example.com/README.md
+  const { initialRoot, initialUrl } = parseTargetArg(process.argv[2]);
+
   const startedAt = Date.now();
   const { localConfigPath, globalConfigPath } = getConfigPaths();
   const app = createServer({
     port: PORT, host: HOST, mode: MODE, startedAt,
     localConfigPath, globalConfigPath,
     windowMode: WINDOW_MODE,
+    initialRoot, initialUrl,
     onIdle: () => process.exit(0),
   });
 
@@ -70,6 +75,27 @@ async function main() {
 }
 
 main();
+
+/**
+ * 起動引数 (argv[2]) を初期表示ターゲットに解釈する。
+ * - http(s):// で始まれば URL モード
+ * - それ以外は絶対パス化し、実在するフォルダのときだけフォルダモード
+ * 不正な引数は無視して従来どおり (前回状態の復元) 起動する。
+ */
+function parseTargetArg(arg) {
+  if (!arg) return { initialRoot: null, initialUrl: null };
+  if (/^https?:\/\//i.test(arg)) return { initialRoot: null, initialUrl: arg };
+  try {
+    const abs = resolve(arg);
+    if (existsSync(abs) && statSync(abs).isDirectory()) {
+      return { initialRoot: abs, initialUrl: null };
+    }
+    console.error(`指定パスが見つからないか、フォルダではありません: ${arg}`);
+  } catch (err) {
+    console.error(`起動引数の解釈に失敗しました: ${err.message}`);
+  }
+  return { initialRoot: null, initialUrl: null };
+}
 
 /**
  * Edge / Chrome を「アプリモード」(--app) で起動し、アドレスバーの無い

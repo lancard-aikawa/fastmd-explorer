@@ -152,7 +152,21 @@ async function init() {
     state.folderHistory = config.history ?? [];
     state.urlHistory    = config.urlHistory ?? [];
 
-    if (config.lastMode === 'url' && config.lastUrl) {
+    // 優先順位: サーバが現在開いているもの (起動引数 or 同一セッションのリロード)
+    //           → 前回 URL モードの復元 → 空のフォルダモード
+    if (config.currentUrl) {
+      applyModeUI('url');
+      populateHistory(state.urlHistory);
+      renderUrlHistory(state.urlHistory);
+      folderInput.value = config.currentUrl;
+      await openUrl(config.currentUrl);
+    } else if (config.currentRoot) {
+      applyModeUI('folder');
+      populateHistory(state.folderHistory);
+      state.currentRoot = config.currentRoot;
+      folderInput.value = config.currentRoot;
+      await refreshTree();
+    } else if (config.lastMode === 'url' && config.lastUrl) {
       // 前回 URLモードだった → URLモードで起動し、最後の URL を開く
       applyModeUI('url');
       populateHistory(state.urlHistory);
@@ -162,11 +176,6 @@ async function init() {
     } else {
       applyModeUI('folder');
       populateHistory(state.folderHistory);
-      if (config.currentRoot) {
-        state.currentRoot = config.currentRoot;
-        folderInput.value = config.currentRoot;
-        await refreshTree();
-      }
     }
   } catch (err) {
     showWarning(`初期化エラー: ${err.message}`, 'error');
@@ -761,6 +770,77 @@ function miniChip(tag) {
   s.style.setProperty('--tag-hue', tagHue(tag));
   s.textContent = tag;
   return s;
+}
+
+// ---- ツリーのキーボード操作 (↑↓ 移動 / Enter 開く / ←→ 展開折畳) ----------
+// 行 (ファイル・画像・HTML・ディレクトリ) を上下に辿る。ルート行は対象外。
+const TREE_ROW_SELECTOR = '.tree-dir:not(.tree-root-row), .tree-file, .tree-image';
+let treeCursorEl = null;
+
+function visibleTreeRows() {
+  // 折り畳まれた ul (display:none) 内の行は offsetParent === null で除外される
+  return [...fileTree.querySelectorAll(TREE_ROW_SELECTOR)].filter((el) => el.offsetParent !== null);
+}
+
+function setTreeCursor(el, { scroll = true } = {}) {
+  if (treeCursorEl) treeCursorEl.classList.remove('tree-cursor');
+  treeCursorEl = el ?? null;
+  if (treeCursorEl) {
+    treeCursorEl.classList.add('tree-cursor');
+    if (scroll) treeCursorEl.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+function moveTreeCursor(delta) {
+  const rows = visibleTreeRows();
+  if (!rows.length) return;
+  let idx = treeCursorEl ? rows.indexOf(treeCursorEl) : -1;
+  if (idx === -1) {
+    // 未選択: アクティブファイルから、無ければ端から開始
+    const active = fileTree.querySelector('.tree-file.active');
+    idx = active ? rows.indexOf(active) : (delta > 0 ? -1 : 0);
+  }
+  setTreeCursor(rows[Math.max(0, Math.min(rows.length - 1, idx + delta))]);
+}
+
+function isDirExpanded(row) {
+  return row.querySelector('.dir-arrow')?.textContent.trim() === '▾';
+}
+
+function activateTreeCursor() {
+  if (!treeCursorEl) return;
+  // 画像行はサムネ/ラベルにハンドラがあるため内側要素をクリック、他は行自身
+  if (treeCursorEl.classList.contains('tree-image')) {
+    (treeCursorEl.querySelector('.tree-image-name') ?? treeCursorEl).click();
+  } else {
+    treeCursorEl.click(); // ファイル: 開く / ディレクトリ: 展開折畳
+  }
+}
+
+function initTreeKeyboardNav() {
+  fileTree.tabIndex = 0;
+  // 行クリックでカーソルを合わせ、ツリーにフォーカス (以後すぐ矢印操作できる)
+  fileTree.addEventListener('click', (e) => {
+    const row = e.target.closest(TREE_ROW_SELECTOR);
+    if (row) { setTreeCursor(row, { scroll: false }); fileTree.focus({ preventScroll: true }); }
+  });
+  fileTree.addEventListener('keydown', (e) => {
+    switch (e.key) {
+      case 'ArrowDown': e.preventDefault(); moveTreeCursor(1); break;
+      case 'ArrowUp':   e.preventDefault(); moveTreeCursor(-1); break;
+      case 'Enter':     e.preventDefault(); activateTreeCursor(); break;
+      case 'ArrowRight':
+        if (treeCursorEl?.classList.contains('tree-dir') && !isDirExpanded(treeCursorEl)) {
+          e.preventDefault(); treeCursorEl.click(); // 折り畳み → 展開
+        }
+        break;
+      case 'ArrowLeft':
+        if (treeCursorEl?.classList.contains('tree-dir') && isDirExpanded(treeCursorEl)) {
+          e.preventDefault(); treeCursorEl.click(); // 展開 → 折り畳み
+        }
+        break;
+    }
+  });
 }
 
 // ---- Tabs ----------------------------------------------------------------
@@ -2878,6 +2958,9 @@ function bindEvents() {
     btnShowHtml.classList.toggle('active', state.showHtml);
     refreshTree();
   });
+
+  // ツリーのキーボード操作 (↑↓ / Enter / ←→)
+  initTreeKeyboardNav();
 
   // Context menu: close on outside click / Escape
   document.addEventListener('click', hideContextMenu);
