@@ -7,3 +7,5 @@ server.log
 dist/
 src/_bundle.cjs
 src/.pkgrc.json
+.hintrc
+.playwright-mcp/
