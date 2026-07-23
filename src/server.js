@@ -362,6 +362,9 @@ export function createServer(meta = {}) {
   let currentMode = meta.initialUrl ? 'url' : 'folder';   // 'folder' | 'url'
   let currentUrl  = meta.initialUrl ?? null;              // URLモードで現在開いている md の URL
 
+  // 起動引数で開くフォルダも「開き直し」なので、初回スキャンはキャッシュを使わない。
+  if (currentRoot) invalidateCache(currentRoot, { hard: true });
+
   // GET /api/config
   app.get('/api/config', (_req, res) => {
     const config = getConfig();          // 履歴・lastFolder・urlHistory・lastUrl・lastMode
@@ -468,7 +471,10 @@ export function createServer(meta = {}) {
     currentRoot = folderPath;
     currentMode = 'folder';
     currentUrl  = null;
-    invalidateCache(folderPath); // soft: keep disk cache for fast reload after restart
+    // 履歴・入力・ピッカーから開き直した時は必ず再スキャンする。
+    // ルート直下の mtime しか見ない disk キャッシュだと、アプリを閉じている間の
+    // 深い階層の増減が反映されず古いツリーが出るため hard で捨てる。
+    invalidateCache(folderPath, { hard: true });
     const config = await addFolderToHistory(folderPath);
 
     res.json({ path: folderPath, warnings, config });
@@ -519,6 +525,7 @@ export function createServer(meta = {}) {
       const charCount = [...content.replace(/\s+/g, '')].length;
       const finalUrl  = resp.url || url; // リダイレクト後の URL を相対解決の基準にする
       const html = rewriteRemoteAssets(renderMarkdown(content), finalUrl);
+      res.setHeader('Cache-Control', 'no-store'); // 履歴から開き直した時に古い内容を出さない
       res.json({ html, charCount, lastModified: resp.headers.get('last-modified') ?? null, finalUrl, truncated });
     } catch (err) {
       const msg = err?.name === 'TimeoutError' ? 'タイムアウトしました' : err.message;
