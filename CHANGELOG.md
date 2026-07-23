@@ -7,6 +7,15 @@
 
 ## [未リリース]
 
+## [1.7.0] - 2026-07-23
+
+### 追加
+- 起動引数の対応。`pnpm start <フォルダ|URL>` / `fastmd-explorer.exe <フォルダ|URL>` で指定した場所を開いた状態で起動する。不正な引数は警告して従来どおり前回状態で起動する。
+- ツリーの矢印キー操作（↑↓ でカーソル移動 / Enter で開く / ←→ で展開・折りたたみ）。行クリックでもカーソルが追従する。
+
+### 修正
+- 履歴やフォルダピッカーから開き直した時に、古いツリー（キャッシュ）が表示される問題を修正。ルート直下の更新日時しか見ていなかったため、アプリを閉じている間の深い階層のファイル増減が反映されなかった。開き直しと起動引数での起動時は必ず再スキャンする。あわせて URL モードの取得結果をブラウザにキャッシュさせないようにした。
+
 ## [1.6.0] - 2026-07-03
 
 ### 追加
@@ -95,7 +104,8 @@
   - 設定パネル・ステータスバー
   - 単一 exe ビルド (@yao-pkg/pkg + esbuild)、pnpm 化
 
-[未リリース]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.6.0...HEAD
+[未リリース]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.5.2...v1.6.0
 [1.5.2]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.5.1...v1.5.2
 [1.5.1]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.5.0...v1.5.1
