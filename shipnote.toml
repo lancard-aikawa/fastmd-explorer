@@ -1,0 +1,32 @@
+# Shipnote の設定。Pages の LP (/projects/<slug>/) に出す内容。
+# 書き換えたら `shipnote sync` で反映する。
+
+name = "MdExplorer"
+github = "lancard-aikawa/fastmd-explorer"
+# slug = "mdexplorer"   # LP の URL。省略すると name から作る
+
+# 一行の紹介 (トップの一覧と LP の見出し下に出る)
+tagline = "フォルダ内の .md を再帰的に一覧し、GitHub ライクにプレビューする軽量エクスプローラー"
+
+# 二〜四文の説明
+description = "ドキュメントファーストなリポジトリの中身を読むためのツールです。フォルダを指定するだけで .md ファイルを再帰的に一覧表示し、タブ・アウトライン・全文検索を備えたプレビューで読み進められます。Node.js 18 以上と pnpm があれば `pnpm start` で起動でき、単一 exe にビルドすれば Node.js の無い端末にも配布できます。設定・タグ・履歴は `~/.mdexplorer` 側に保存されるため、対象フォルダを汚しません。"
+
+features = [
+  "フォルダを再帰スキャンして .md を一覧。node_modules・.git・隠しフォルダは自動でスキップ",
+  "GitHub ライクなプレビュー。highlight.js のシンタックスハイライト、Mermaid 図、Wiki リンク [[...]] に対応",
+  "VSCode 風のタブ、見出しからのアウトライン生成、Ctrl+G の全文検索、Ctrl+E での編集と Ctrl+S 保存",
+  "フォルダ内 .md の相互リンクを cytoscape で図示。全 .md を 1 つに結合して PDF 出力も可能",
+  "タグ・重要フラグ・メモは ~/.mdexplorer に保存され、対象フォルダにファイルを作らない",
+]
+
+# 動く環境 (例: "Windows 10 / 11")
+platforms = "Windows 10 / 11 (exe 配布時)。開発時は Node.js 18 以上 + pnpm"
+
+# リポジトリ内の画像のパス。LP に並ぶ
+screenshots = []
+
+# false にするとトップの一覧から外す (LP とリリース記録は作る)
+listed = true
+
+# false にすると一覧と LP だけ載せ、リリース記録 (/posts/) は作らない (作ってあったものは消す)
+posts = false
