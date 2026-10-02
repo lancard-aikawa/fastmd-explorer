@@ -7,6 +7,14 @@
 
 ## [未リリース]
 
+## [1.8.1] - 2026-10-02
+
+依存パッケージの脆弱性に対応したリリース。機能の変更はない。
+
+### セキュリティ
+- 依存パッケージを更新し、`pnpm audit` で報告されていた脆弱性（critical 1 / high 4 / moderate 19 / low 7）を解消した。主なものは mermaid 10.9.8（設定 API のプロトタイプ汚染、および同梱の DOMPurify・lodash-es・uuid）、DOMPurify 3.4.16、express 4.22.3（path-to-regexp・body-parser・qs）。
+- ビルドツールの @yao-pkg/pkg 6.22.0（同梱の tar）と esbuild 0.28.2 を更新した。配布する exe には影響しないが、ビルド環境の脆弱性を解消する。
+
 ## [1.8.0] - 2026-07-27
 
 コードレビューで見つかった問題をまとめて修正したリリース。ローカルのファイルを
@@ -138,7 +146,8 @@
   - 設定パネル・ステータスバー
   - 単一 exe ビルド (@yao-pkg/pkg + esbuild)、pnpm 化
 
-[未リリース]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.7.1...HEAD
+[未リリース]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.8.1...HEAD
+[1.8.1]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.7.1...v1.8.0
 [1.7.1]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.6.0...v1.7.0
