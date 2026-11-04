@@ -7,6 +7,19 @@
 
 ## [未リリース]
 
+## [1.8.2] - 2026-11-04
+
+依存パッケージの脆弱性に対応したリリース。機能の変更はない。
+
+### セキュリティ
+- DOMPurify を 3.4.17 に更新した。`SAFE_FOR_TEMPLATES` の迂回（緊急）と `IN_PLACE` の不完全な修正（高）などを含む 3 件を解消する。
+- express 配下の body-parser 1.20.9（圧縮されたリクエスト本文によるサービス妨害）と qs 6.16.2 を更新した。
+- KaTeX を 0.18.10 に更新した（信頼設定の迂回、低）。0.18.11 は配布元が非推奨としているため 0.18.10 に固定している。
+- ビルドツール（@yao-pkg/pkg 6.24.0）が使う undici を 7.30.1 に更新した。配布する exe には影響しない。
+
+### 既知の問題
+- mermaid 10 が内部に組み込んでいる KaTeX 0.16 は更新されていない（GHSA-238p-pmpm-9mq7、低）。解消には mermaid 11 以上への更新が要る。
+
 ## [1.8.1] - 2026-10-02
 
 依存パッケージの脆弱性に対応したリリース。機能の変更はない。
@@ -146,7 +159,8 @@
   - 設定パネル・ステータスバー
   - 単一 exe ビルド (@yao-pkg/pkg + esbuild)、pnpm 化
 
-[未リリース]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.8.1...HEAD
+[未リリース]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.8.2...HEAD
+[1.8.2]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.8.1...v1.8.2
 [1.8.1]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.7.1...v1.8.0
 [1.7.1]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.7.0...v1.7.1
