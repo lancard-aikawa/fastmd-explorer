@@ -7,6 +7,8 @@
 
 ## [未リリース]
 
+## [1.9.0] - 2026-11-11
+
 ### 追加
 - md ファイルを引数で渡すと、そのファイルを表示した状態で開くようにした（`fastmd-explorer.exe C:\docs\README.md`）。`.md` を exe に関連付ければ、エクスプローラーのダブルクリックで開ける。ツリーには親フォルダが出る。
 - 既に動いているときに別の md を開くと、新しくサーバを立てずに動いているアプリへファイルを渡し、ウィンドウを 1 つ追加するようにした。これまではポートが使用中で起動に失敗していた。
@@ -169,7 +171,8 @@
   - 設定パネル・ステータスバー
   - 単一 exe ビルド (@yao-pkg/pkg + esbuild)、pnpm 化
 
-[未リリース]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.8.2...HEAD
+[未リリース]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.8.2...v1.9.0
 [1.8.2]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.8.1...v1.8.2
 [1.8.1]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.7.1...v1.8.0
