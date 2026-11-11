@@ -13,7 +13,7 @@ const DATA_HOME = mkdtempSync(join(tmpdir(), 'mdx-e2e-home-'));
 export default defineConfig({
   testDir: './e2e',
   // 同じサーバの currentRoot / タブ状態を共有するため直列実行する。
-  // サーバは 1 プロセスで「いま開いているフォルダ」を 1 つしか持たない設計。
+  // X-Root を送らない要求は、サーバの「最後に開いたフォルダ」を使うため。
   workers: 1,
   fullyParallel: false,
   forbidOnly: !!process.env.CI,

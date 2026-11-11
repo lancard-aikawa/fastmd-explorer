@@ -333,6 +333,14 @@ function detectFsCrossing(targetPath) {
 
 // ---- Security helper -----------------------------------------------------
 
+/** 単体で開ける Markdown の拡張子 (fileScanner の MD_EXTS と同じ) */
+export const MD_FILE_RE = /\.(md|markdown|mdown|mkd)$/i;
+
+/** md ファイルを単体で開くページのパス (先にファイルを描き、ツリーは後から読む) */
+export function fileViewPath(filePath) {
+  return `/?file=${encodeURIComponent(filePath)}&root=${encodeURIComponent(dirname(filePath))}`;
+}
+
 /** filePath が currentRoot の中に収まっているか。判定の実体は pathGuard.js。 */
 export function isAllowedPath(filePath, currentRoot) {
   return isInside(currentRoot, filePath);
@@ -482,8 +490,39 @@ export function createServer(meta = {}) {
   let currentMode = meta.initialUrl ? 'url' : 'folder';   // 'folder' | 'url'
   let currentUrl  = meta.initialUrl ?? null;              // URLモードで現在開いている md の URL
 
+  // ウィンドウごとのルート。
+  // md をダブルクリックで開くと、同じサーバにウィンドウが増え、ウィンドウごとに
+  // 違うフォルダを開く。クライアントは自分のルートを X-Root ヘッダ (EventSource は
+  // ?root=) で送り、各 API はそれを使う。ヘッダが無ければ従来どおり currentRoot。
+  // 受け付けるのは、このプロセスで開いたことのあるルートだけ
+  // (Origin を検査する POST /api/folder・起動引数・POST /api/open-file で登録)。
+  // 任意のルートを受け付けると、Origin の付かない <img> などの GET から
+  // ルート外のファイルを読めてしまうため。
+  const openedRoots = new Map(); // key (Windows は小文字) → path
+  const rootKey = (p) => {
+    const n = normalize(p);
+    return process.platform === 'win32' ? n.toLowerCase() : n;
+  };
+  function registerRoot(p) {
+    if (p) openedRoots.set(rootKey(p), normalize(p));
+  }
+  function rootOf(req) {
+    let raw = req.get('x-root');
+    if (raw) { try { raw = decodeURIComponent(raw); } catch { raw = null; } }
+    raw ??= req.query?.root;
+    if (typeof raw === 'string' && raw) {
+      const hit = openedRoots.get(rootKey(raw));
+      if (hit) return hit;
+    }
+    return currentRoot;
+  }
+  const isInsideAnyRoot = (p) => [...openedRoots.values()].some((r) => isAllowedPath(p, r));
+
   // 起動引数で開くフォルダも「開き直し」なので、初回スキャンはキャッシュを使わない。
-  if (currentRoot) invalidateCache(currentRoot, { hard: true });
+  if (currentRoot) {
+    registerRoot(currentRoot);
+    invalidateCache(currentRoot, { hard: true });
+  }
 
   // GET /api/config
   app.get('/api/config', (_req, res) => {
@@ -540,6 +579,7 @@ export function createServer(meta = {}) {
   app.get('/api/status', (_req, res) => {
     const srv = serverConfig();
     res.json({
+      app:            'fastmd-explorer', // 2 つ目のプロセスが相手を見分けるため
       port:           meta.port ?? srv.port,
       host:           meta.host ?? '127.0.0.1',
       mode:           meta.mode ?? srv.network,
@@ -588,6 +628,7 @@ export function createServer(meta = {}) {
     }
 
     const warnings = detectFsCrossing(folderPath);
+    registerRoot(folderPath);
     currentRoot = folderPath;
     currentMode = 'folder';
     currentUrl  = null;
@@ -598,6 +639,27 @@ export function createServer(meta = {}) {
     const config = await addFolderToHistory(folderPath);
 
     res.json({ path: folderPath, warnings, config });
+  });
+
+  // POST /api/open-file  { path }  → { url, root }
+  // md のダブルクリックで起動した 2 つ目のプロセスが、動いているサーバに
+  // ファイルを渡すための口。親フォルダをルートとして登録し、そのファイルを
+  // 開くページの URL を返す (ウィンドウは呼んだ側がブラウザで開く)。
+  // currentRoot は変えない (既に開いているウィンドウに影響させない)。
+  app.post('/api/open-file', async (req, res) => {
+    const rawPath = req.body?.path;
+    if (!rawPath) return res.status(400).json({ error: 'path が必要です' });
+    const filePath = normalize(rawPath);
+    if (!MD_FILE_RE.test(filePath)) return res.status(400).json({ error: 'Markdown ファイルではありません' });
+    try {
+      if (!(await stat(filePath)).isFile()) return res.status(400).json({ error: 'ファイルではありません' });
+    } catch {
+      return res.status(400).json({ error: 'ファイルが見つかりません' });
+    }
+    const root = dirname(filePath);
+    registerRoot(root);
+    invalidateCache(root, { hard: true });
+    res.json({ url: fileViewPath(filePath), root });
   });
 
   // ---- URL モード (リモート md の閲覧) -------------------------------------
@@ -654,7 +716,8 @@ export function createServer(meta = {}) {
   });
 
   // GET /api/files
-  app.get('/api/files', async (_req, res) => {
+  app.get('/api/files', async (req, res) => {
+    const currentRoot = rootOf(req); // window ごとのルート
     if (!currentRoot) return res.status(400).json({ error: 'フォルダが未選択です' });
     try {
       const t0 = performance.now();
@@ -676,7 +739,8 @@ export function createServer(meta = {}) {
   // GET /api/image?path=...  (proxy for images under currentRoot)
   app.get('/api/image', async (req, res) => {
     const imgPath = normalize(req.query.path ?? '');
-    if (!imgPath || !isAllowedPath(imgPath, currentRoot))
+    // <img src> からの要求でヘッダを付けられないため、開いたどれかのルート内なら許す
+    if (!imgPath || !(isAllowedPath(imgPath, currentRoot) || isInsideAnyRoot(imgPath)))
       return res.status(403).send('Forbidden');
     try {
       res.setHeader('Cache-Control', 'no-store'); // 画像は URL が同一なのでブラウザキャッシュで古い版が出やすい
@@ -696,6 +760,7 @@ export function createServer(meta = {}) {
 
   // GET /api/preview?path=...
   app.get('/api/preview', async (req, res) => {
+    const currentRoot = rootOf(req); // window ごとのルート
     const filePath = req.query.path;
     if (!filePath || !isAllowedPath(filePath, currentRoot)) {
       return res.status(403).json({ error: '不正なパスです' });
@@ -722,6 +787,7 @@ export function createServer(meta = {}) {
 
   // POST /api/upload-image  { base64, filename, dir }  → { relativePath, path }
   app.post('/api/upload-image', async (req, res) => {
+    const currentRoot = rootOf(req); // window ごとのルート
     const { base64, filename, dir } = req.body ?? {};
     if (!base64 || !filename || !dir) return res.status(400).json({ error: 'base64 / filename / dir が必要です' });
     if (!isAllowedPath(normalize(dir), currentRoot)) return res.status(403).json({ error: '不正なパスです' });
@@ -755,6 +821,7 @@ export function createServer(meta = {}) {
 
   // GET /api/file?path=...
   app.get('/api/file', async (req, res) => {
+    const currentRoot = rootOf(req); // window ごとのルート
     const filePath = req.query.path;
     if (!filePath || !isAllowedPath(filePath, currentRoot)) {
       return res.status(403).json({ error: '不正なパスです' });
@@ -770,6 +837,7 @@ export function createServer(meta = {}) {
 
   // PUT /api/file?path=...  { content }
   app.put('/api/file', async (req, res) => {
+    const currentRoot = rootOf(req); // window ごとのルート
     const filePath = req.query.path;
     if (!filePath || !isAllowedPath(filePath, currentRoot)) {
       return res.status(403).json({ error: '不正なパスです' });
@@ -787,7 +855,8 @@ export function createServer(meta = {}) {
   });
 
   // GET /api/tags
-  app.get('/api/tags', async (_req, res) => {
+  app.get('/api/tags', async (req, res) => {
+    const currentRoot = rootOf(req); // window ごとのルート
     if (!currentRoot) return res.status(400).json({ error: 'フォルダが未選択です' });
     try {
       const tags = await loadTags(currentRoot);
@@ -799,6 +868,7 @@ export function createServer(meta = {}) {
 
   // PUT /api/tags  { relativePath, tags, flagged, note }
   app.put('/api/tags', async (req, res) => {
+    const currentRoot = rootOf(req); // window ごとのルート
     if (!currentRoot) return res.status(400).json({ error: 'フォルダが未選択です' });
     const { relativePath, tags, flagged, note } = req.body;
     if (!relativePath) return res.status(400).json({ error: 'relativePath が必要です' });
@@ -812,6 +882,7 @@ export function createServer(meta = {}) {
 
   // POST /api/fs/file  { dir, name }
   app.post('/api/fs/file', async (req, res) => {
+    const currentRoot = rootOf(req); // window ごとのルート
     const { dir, name } = req.body ?? {};
     if (!dir || !name) return res.status(400).json({ error: 'dir と name が必要です' });
     const fileName = name.match(/\.[^.]+$/) ? name : name + '.md';
@@ -827,6 +898,7 @@ export function createServer(meta = {}) {
 
   // POST /api/fs/folder  { dir, name }
   app.post('/api/fs/folder', async (req, res) => {
+    const currentRoot = rootOf(req); // window ごとのルート
     const { dir, name } = req.body ?? {};
     if (!dir || !name) return res.status(400).json({ error: 'dir と name が必要です' });
     const folderPath = normalize(join(dir, name));
@@ -841,6 +913,7 @@ export function createServer(meta = {}) {
 
   // PATCH /api/fs/rename  { oldPath, newPath }
   app.patch('/api/fs/rename', async (req, res) => {
+    const currentRoot = rootOf(req); // window ごとのルート
     const { oldPath, newPath } = req.body ?? {};
     if (!oldPath || !newPath) return res.status(400).json({ error: 'oldPath と newPath が必要です' });
     if (!isAllowedPath(normalize(oldPath), currentRoot) || !isAllowedPath(normalize(newPath), currentRoot))
@@ -865,6 +938,7 @@ export function createServer(meta = {}) {
 
   // DELETE /api/fs  { path }
   app.delete('/api/fs', async (req, res) => {
+    const currentRoot = rootOf(req); // window ごとのルート
     const filePath = req.body?.path;
     if (!filePath || !isAllowedPath(normalize(filePath), currentRoot))
       return res.status(403).json({ error: '不正なパスです' });
@@ -878,6 +952,7 @@ export function createServer(meta = {}) {
 
   // GET /api/backlinks?path=...  → { links: [{ path, relativePath, name, lineNum, text }] }
   app.get('/api/backlinks', async (req, res) => {
+    const currentRoot = rootOf(req); // window ごとのルート
     const targetPath = req.query.path;
     if (!targetPath || !currentRoot) return res.status(400).json({ error: 'path またはフォルダが未設定です' });
 
@@ -937,6 +1012,7 @@ export function createServer(meta = {}) {
 
   // GET /api/search?q=...  (SSE: progress + results streaming)
   app.get('/api/search', async (req, res) => {
+    const currentRoot = rootOf(req); // window ごとのルート
     const q = req.query.q?.trim();
     if (!q || !currentRoot) {
       res.setHeader('Content-Type', 'application/json');
@@ -1003,7 +1079,8 @@ export function createServer(meta = {}) {
   });
 
   // POST /api/refresh
-  app.post('/api/refresh', (_req, res) => {
+  app.post('/api/refresh', (req, res) => {
+    const currentRoot = rootOf(req); // window ごとのルート
     if (currentRoot) invalidateCache(currentRoot, { hard: true }); // force fresh scan + update disk cache
     res.json({ ok: true });
   });
@@ -1017,7 +1094,8 @@ export function createServer(meta = {}) {
   // GET /api/linkgraph  → { nodes:[{rel,name}], edges:[{from,to}], total, isolatedCount }
   // 全 .md を走査し、md リンク / wikilink の相互参照グラフを構築する。
   // (リンクを 1 本以上持つファイルのみノード化。孤立ファイル数は別途返す)
-  app.get('/api/linkgraph', async (_req, res) => {
+  app.get('/api/linkgraph', async (req, res) => {
+    const currentRoot = rootOf(req); // window ごとのルート
     if (!currentRoot) return res.status(400).json({ error: 'フォルダが未選択です' });
     try {
       const files = [];                 // { rel, name }
@@ -1079,7 +1157,8 @@ export function createServer(meta = {}) {
   //  - 各ファイルの前に扉 (パス・更新日時・文字数) を挿入し改ページ
   //  - 目次はファイル名を第1階層・見出しを第2階層以降にネスト
   //  - ファイル間の md リンクは結合先の節アンカー (#file-N) へ書き換え
-  app.get('/api/combined', async (_req, res) => {
+  app.get('/api/combined', async (req, res) => {
+    const currentRoot = rootOf(req); // window ごとのルート
     if (!currentRoot) return res.status(400).json({ error: 'フォルダが未選択です' });
     try {
       const { tree } = await scanMarkdownFiles(currentRoot);

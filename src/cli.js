@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-import { join, resolve } from 'path';
+import { join, resolve, dirname } from 'path';
 import { networkInterfaces, tmpdir } from 'os';
 import { existsSync, statSync, createWriteStream } from 'fs';
 import { randomBytes } from 'crypto';
 import { spawn } from 'child_process';
-import { createServer } from './server.js';
+import { createServer, MD_FILE_RE, fileViewPath } from './server.js';
 import { loadConfig, loadLocalConfig, serverConfig, getConfigPaths, getConfig } from './configManager.js';
 import { appHomePath } from './appHome.js';
 
@@ -38,7 +38,8 @@ async function main() {
 
   // 起動引数: フォルダパス または http(s) URL を初期表示に使う。
   //   例) fastmd-explorer C:\docs   /   fastmd-explorer https://example.com/README.md
-  const { initialRoot, initialUrl } = parseTargetArg(process.argv[2]);
+  //   md ファイルなら親フォルダを開いてそのファイルを表示する (関連付けのダブルクリック用)
+  const { initialRoot, initialUrl, initialFile } = parseTargetArg(process.argv[2]);
 
   // LAN 公開時だけアクセストークンを発行する。
   // ローカル (127.0.0.1) からは従来どおりトークン無しで開ける。
@@ -55,7 +56,7 @@ async function main() {
     onIdle: () => process.exit(0),
   });
 
-  app.listen(PORT, HOST, async () => {
+  const httpServer = app.listen(PORT, HOST, async () => {
     const local = `http://127.0.0.1:${PORT}`;
     console.log(`\nfastmd-explorer`);
     console.log(`  local  →  ${local}`);
@@ -72,14 +73,63 @@ async function main() {
 
     if (process.env.NO_OPEN) return;
 
-    if (WINDOW_MODE && launchAppWindow(local, getConfig().windowBounds)) return;
+    const target = initialFile ? local + fileViewPath(initialFile) : local;
+    if (WINDOW_MODE && launchAppWindow(target, getConfig().windowBounds)) return;
 
     // 通常モード (またはアプリモード起動に失敗): 既定ブラウザのタブで開く
-    try {
-      const { default: open } = await import('open');
-      await open(local);
-    } catch { /* ignore */ }
+    await openInBrowser(target);
   });
+
+  // 既に動いている fastmd-explorer がポートを使っている (md を続けてダブルクリック
+  // したときなど) → 新しくサーバを立てず、そちらにファイルを渡してウィンドウだけ開く。
+  // 同じブラウザプロファイルの --app は既存のブラウザに相乗りするので、2 つ目以降は速い。
+  httpServer.on('error', async (err) => {
+    if (err.code === 'EADDRINUSE' && await forwardToRunning(PORT, initialFile)) process.exit(0);
+    console.error(`起動に失敗しました: ${err.message}`);
+    process.exit(1);
+  });
+}
+
+async function openInBrowser(url) {
+  try {
+    const { default: open } = await import('open');
+    await open(url);
+  } catch { /* ignore */ }
+}
+
+/**
+ * ポートを使っているのが fastmd-explorer なら、ファイルを渡して新しいウィンドウを開く。
+ * 相手が fastmd-explorer でない / 応答しないときは false。
+ */
+async function forwardToRunning(port, file) {
+  const base = `http://127.0.0.1:${port}`;
+  let status;
+  try {
+    const r = await fetch(`${base}/api/status`, { signal: AbortSignal.timeout(3000) });
+    status = await r.json();
+  } catch { return false; }
+  if (status?.app !== 'fastmd-explorer') return false;
+
+  let path = '/';
+  if (file) {
+    try {
+      const r = await fetch(`${base}/api/open-file`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: file }),
+        signal: AbortSignal.timeout(3000),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? r.statusText);
+      path = j.url;
+    } catch (e) {
+      console.error(`ファイルを渡せませんでした: ${e.message}`);
+    }
+  }
+  const url = base + path;
+  if (status.windowMode && launchAppWindow(url, getConfig().windowBounds)) return true;
+  await openInBrowser(url);
+  return true;
 }
 
 main();
@@ -87,22 +137,26 @@ main();
 /**
  * 起動引数 (argv[2]) を初期表示ターゲットに解釈する。
  * - http(s):// で始まれば URL モード
- * - それ以外は絶対パス化し、実在するフォルダのときだけフォルダモード
+ * - それ以外は絶対パス化し、実在するフォルダならフォルダモード、
+ *   md ファイルなら親フォルダを開いてそのファイルを表示する
  * 不正な引数は無視して従来どおり (前回状態の復元) 起動する。
  */
 function parseTargetArg(arg) {
-  if (!arg) return { initialRoot: null, initialUrl: null };
-  if (/^https?:\/\//i.test(arg)) return { initialRoot: null, initialUrl: arg };
+  const none = { initialRoot: null, initialUrl: null, initialFile: null };
+  if (!arg) return none;
+  if (/^https?:\/\//i.test(arg)) return { ...none, initialUrl: arg };
   try {
     const abs = resolve(arg);
-    if (existsSync(abs) && statSync(abs).isDirectory()) {
-      return { initialRoot: abs, initialUrl: null };
+    const st = existsSync(abs) ? statSync(abs) : null;
+    if (st?.isDirectory()) return { ...none, initialRoot: abs };
+    if (st?.isFile() && MD_FILE_RE.test(abs)) {
+      return { ...none, initialRoot: dirname(abs), initialFile: abs };
     }
-    console.error(`指定パスが見つからないか、フォルダではありません: ${arg}`);
+    console.error(`指定パスが見つからないか、フォルダでも md ファイルでもありません: ${arg}`);
   } catch (err) {
     console.error(`起動引数の解釈に失敗しました: ${err.message}`);
   }
-  return { initialRoot: null, initialUrl: null };
+  return none;
 }
 
 /**

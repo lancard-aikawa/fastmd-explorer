@@ -2,7 +2,19 @@
 
 // ---- Mermaid init --------------------------------------------------------
 const MERMAID_BASE = { startOnLoad: false, securityLevel: 'loose', maxEdges: 2000, maxTextSize: 200000 };
-mermaid.initialize({ ...MERMAID_BASE, theme: 'default' });
+
+// mermaid.min.js は 3.3MB あり、読み込むだけで起動が遅れる。図を描くときに初めて読む。
+let _mermaidLoading = null;
+function loadMermaid() {
+  _mermaidLoading ??= new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = '/vendor/mermaid.min.js';
+    s.onload = () => resolve(window.mermaid);
+    s.onerror = () => { _mermaidLoading = null; reject(new Error('mermaid を読み込めませんでした')); };
+    document.head.appendChild(s);
+  });
+  return _mermaidLoading;
+}
 
 // 画面表示用の Mermaid テーマ (ダークテーマ時は dark)。
 // 印刷/PDF は常に default (白地・濃い文字) で描き直すため別管理する。
@@ -128,6 +140,9 @@ const urlHistoryList = $('url-history-list');
 // ---- API helpers ---------------------------------------------------------
 async function api(method, path, body) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  // ウィンドウごとのルートをサーバに伝える (md のダブルクリックで同じサーバに
+  // 別フォルダのウィンドウが増えるため)。日本語パスはヘッダに載らないので符号化する。
+  if (state.currentRoot) opts.headers['X-Root'] = encodeURIComponent(state.currentRoot);
   if (body !== undefined) opts.body = JSON.stringify(body);
   const res = await fetch(path, opts);
   let json;
@@ -143,6 +158,9 @@ const del   = (p, b) => api('DELETE', p, b);
 
 // ---- Init ----------------------------------------------------------------
 async function init() {
+  // 操作は初期表示 (前回のファイルや URL の描画) を待たずに受け付ける。
+  // 後に置くと、描画中 (mermaid の読み込み中など) のクリックが効かない。
+  bindEvents();
   try {
     const config = await get('/api/config');
     // localStorage のユーザー選択を最優先、無ければ config の既定値
@@ -152,9 +170,23 @@ async function init() {
     state.folderHistory = config.history ?? [];
     state.urlHistory    = config.urlHistory ?? [];
 
-    // 優先順位: サーバが現在開いているもの (起動引数 or 同一セッションのリロード)
+    // 優先順位: md 単体 (?file=) → サーバが現在開いているもの (起動引数 or 同一セッションのリロード)
     //           → 前回 URL モードの復元 → 空のフォルダモード
-    if (config.currentUrl) {
+    const qs = new URLSearchParams(location.search);
+    const startFile = qs.get('file');
+    const startRoot = qs.get('root');
+    if (startFile && startRoot) {
+      // md のダブルクリックで開いたウィンドウ。表示を急ぐため、ファイルを先に描き、
+      // 親フォルダのツリーは待たずに後から読む (大きなフォルダでも表示が遅れない)。
+      applyModeUI('folder');
+      populateHistory(state.folderHistory);
+      state.currentRoot = startRoot;
+      folderInput.value = startRoot;
+      const name = startFile.split(/[/\\]/).pop();
+      const opening = openFile({ path: startFile, relativePath: name, name }); // 先に要求を出す
+      refreshTree(); // 待たない
+      await opening;
+    } else if (config.currentUrl) {
       applyModeUI('url');
       populateHistory(state.urlHistory);
       renderUrlHistory(state.urlHistory);
@@ -180,8 +212,7 @@ async function init() {
   } catch (err) {
     showWarning(`初期化エラー: ${err.message}`, 'error');
   }
-
-  bindEvents();
+  renderStatusBar(); // 開いたフォルダ / URL を反映 (状態の取得は bindEvents で先に始まっている)
 }
 
 // ---- Font size -----------------------------------------------------------
@@ -204,7 +235,8 @@ function applyTheme(theme) {
   state.theme = theme;
   document.documentElement.setAttribute('data-theme', theme);
   hljsTheme.href = theme === 'dark' ? '/vendor/hljs-dark.css' : '/vendor/hljs-light.css';
-  mermaid.initialize({ ...MERMAID_BASE, theme: theme === 'dark' ? 'dark' : 'default' });
+  // 未読み込みなら何もしない (描くときに renderMermaid がテーマを設定する)
+  window.mermaid?.initialize({ ...MERMAID_BASE, theme: theme === 'dark' ? 'dark' : 'default' });
   localStorage.setItem('theme', theme); // ユーザーの選択を永続化 (再起動後も維持)
 }
 
@@ -247,6 +279,9 @@ async function openFolder(rawPath) {
 
     const res = await post('/api/folder', { path });
     state.currentRoot = res.path;
+    // md 単体で開いたウィンドウでも、別フォルダに移ったら再読み込みで元の md に戻らないようにする
+    if (location.search) history.replaceState(null, '', '/');
+    renderStatusBar();
     state.currentUrl = null;
     state.tags = {};
     state.tabDirty = {};
@@ -1295,6 +1330,14 @@ function highlightInPreview(q) {
 async function renderMermaid() {
   const nodes = Array.from(previewContent.querySelectorAll('.mermaid'));
   if (!nodes.length) return;
+  try {
+    await loadMermaid();
+  } catch (e) {
+    nodes.forEach((el) => {
+      el.innerHTML = `<pre style="color:red;font-size:12px">[mermaid error] ${escHtml(e.message)}</pre>`;
+    });
+    return;
+  }
   mermaid.initialize({ ...MERMAID_BASE, theme: mermaidTheme() });
   nodes.forEach((el) => {
     // 元のグラフ定義を保持しておく (印刷時に配色を変えて描き直すため)
@@ -1441,7 +1484,7 @@ async function printActivePreview() {
 
   // 白地配色 SVG が未キャッシュの図だけ 1 度描画してキャッシュ
   const need = nodes.filter((el) => !el._svgCache?.default && el.dataset.mermaidSrc);
-  if (need.length) {
+  if (need.length && await loadMermaid().catch(() => null)) {
     mermaid.initialize({ ...MERMAID_BASE, theme: 'default' });
     need.forEach((el) => {
       el.textContent = el.dataset.mermaidSrc;
@@ -1650,7 +1693,7 @@ async function openCombined() {
     // Mermaid 図を描画。結合プレビューは PDF 前提のビューなので、テーマに依らず
     // 常にライト配色 (default) で描く → 画面の見た目がそのまま PDF になる。
     const nodes = Array.from(combinedContent.querySelectorAll('.mermaid'));
-    if (nodes.length) {
+    if (nodes.length && await loadMermaid().catch(() => null)) {
       mermaid.initialize({ ...MERMAID_BASE, theme: 'default' });
       nodes.forEach((el) => {
         if (!el.dataset.mermaidSrc) el.dataset.mermaidSrc = el.textContent;
@@ -2320,7 +2363,7 @@ function runFulltextSearch(q) {
 
   let foundCount = 0;
 
-  const es = new EventSource(`/api/search?q=${encodeURIComponent(q)}`);
+  const es = new EventSource(`/api/search?q=${encodeURIComponent(q)}&root=${encodeURIComponent(state.currentRoot ?? '')}`);
   _fulltextES = es;
 
   const reQ = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
@@ -3111,9 +3154,11 @@ function renderStatusBar() {
   if (!_statusCache) return;
   const s = _statusCache;
   statusPort.textContent   = `${s.host}:${s.port}${s.mode === 'lan' ? ' (LAN)' : ''}`;
-  statusFolder.textContent = s.currentMode === 'url'
-    ? `🌐 ${shortPath(s.currentUrl)}`
-    : `📂 ${shortPath(s.currentFolder)}`;
+  // サーバの currentFolder は「最後に開いたフォルダ」で、別ウィンドウのものの
+  // ことがある (md の単体表示でウィンドウが増えるため)。このウィンドウの状態を出す。
+  statusFolder.textContent = state.mode === 'url'
+    ? `🌐 ${shortPath(state.currentUrl ?? s.currentUrl)}`
+    : `📂 ${shortPath(state.currentRoot ?? s.currentFolder)}`;
   statusPid.textContent    = `PID ${s.pid}`;
   statusUptime.textContent = `稼働 ${formatUptime(s.uptimeSec)}`;
 }
@@ -3127,7 +3172,7 @@ function renderSettingsPanel() {
     ['アドレス',     `${s.host}:${s.port}`],
     ['ネットワーク', s.mode === 'lan' ? 'LAN 公開' : 'ローカルのみ'],
     ['稼働時間',     formatUptime(s.uptimeSec)],
-    ['現在のフォルダ', s.currentFolder ?? '(未選択)'],
+    ['現在のフォルダ', escHtml(state.currentRoot ?? s.currentFolder ?? '(未選択)')],
   ]);
   $('settings-process').innerHTML = dl([
     ['PID',          s.pid],

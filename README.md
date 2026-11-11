@@ -36,6 +36,9 @@ pnpm start https://example.com/README.md
 起動後、ブラウザで `http://127.0.0.1:13847` が開きます。
 
 起動引数は exe でも同じように使えます (`fastmd-explorer.exe C:\docs`)。
+md ファイルを渡すと、そのファイルを表示した状態で開きます (`fastmd-explorer.exe C:\docs\README.md`)。
+`.md` を exe に関連付ければ、エクスプローラーのダブルクリックで開けます（手順は [MANUAL.md](MANUAL.md#md-ファイルをダブルクリックで開く)）。
+既に開いているときは、動いているアプリに新しいウィンドウを 1 つ追加します。
 指定パスが存在しない場合は警告を出し、従来どおり前回開いていた状態で起動します。
 
 ---
