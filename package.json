@@ -15,7 +15,7 @@
     "start": "node src/cli.js",
     "dev": "node --watch src/cli.js",
     "build:bundle": "node scripts/build-bundle.mjs",
-    "build:exe": "pkg src/_bundle.cjs --targets node22-win-x64 --output dist/fastmd-explorer.exe",
+    "build:exe": "node scripts/build-exe.mjs",
     "build:patch": "node scripts/patch-subsystem.mjs dist/fastmd-explorer.exe",
     "build": "pnpm run build:bundle && pnpm run build:exe && pnpm run build:patch"
   },
@@ -34,6 +34,7 @@
   "devDependencies": {
     "@playwright/test": "^1.64.1",
     "@yao-pkg/pkg": "^6.24.0",
-    "esbuild": "^0.28.2"
+    "esbuild": "^0.28.2",
+    "resedit": "^3.1.0"
   }
 }

@@ -42,7 +42,7 @@ pnpm run build
 | ステップ | スクリプト | 内容 |
 |---|---|---|
 | 1. bundle | `pnpm run build:bundle` | esbuild が ESM を CJS にバンドル → `src/_bundle.cjs` + `src/.pkgrc.json` を生成 |
-| 2. exe | `pnpm run build:exe` | `@yao-pkg/pkg` が Node ランタイム同梱の exe を生成 → `dist/fastmd-explorer.exe` |
+| 2. exe | `pnpm run build:exe` | Node 本体の複製にアイコンと版情報を入れ（`.cache/pkg-base/`）、`@yao-pkg/pkg` がそれを使って exe を生成 → `dist/fastmd-explorer.exe`（[`scripts/build-exe.mjs`](scripts/build-exe.mjs)） |
 | 3. patch | `pnpm run build:patch` | exe の PE サブシステムを GUI 化（ダブルクリック時にコンソール窓を出さない） |
 
 中間生成物（`src/_bundle.cjs`、`src/.pkgrc.json`、`dist/`）は `.gitignore` 済みです。
@@ -70,6 +70,19 @@ pnpm run build
   `/vendor` で配信する依存を追加したら**必ずここに追記**してください
   （漏れると dev では動くのに exe だけ 404 になります）。
   `package.json` の `pkg.assets` は pkg に読まれないため置いていません。
+
+- **アイコンは pkg が包む前の Node 本体に入れる**
+  pkg は同梱データの位置をファイル先頭からの絶対位置で exe に埋め込みます。
+  できあがった exe のリソース（アイコン）を後から書き換えると位置がずれ、起動できなくなります。
+  そのため [`scripts/build-exe.mjs`](scripts/build-exe.mjs) が、pkg-fetch で取った正規の Node 本体
+  （ハッシュ照合済み）を `.cache/pkg-base/` に複製し、resedit でアイコンと版情報を入れてから、
+  `PKG_NODE_PATH` でその複製を pkg に渡します。PE サブシステムの書き換え（3. patch）は
+  ヘッダの 1 バイトだけなので、包んだあとでも問題ありません。
+  アイコンの図案を変えるときは `uv run --no-project --with pillow python scripts/make-icon.py`
+  で `assets/icon.ico` と `public/favicon.ico`（ウィンドウのアイコン）を作り直します。
+
+- **ビルド中に `EPERM: operation not permitted, unlink 'dist\fastmd-explorer.exe'`**
+  `dist/fastmd-explorer.exe` が動いています。そのウィンドウを全部閉じてからビルドします。
 
 - **`Cannot resolve 'mod'` という警告**
   Express の view engine 由来の警告で、このアプリでは無害です（`res.render` を使っていない）。

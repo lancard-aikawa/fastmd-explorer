@@ -75,8 +75,9 @@ exe をダブルクリックすると、Node.js が無くても利用できま�
 
 1. **bundle** (`pnpm run build:bundle`) — esbuild が ESM ソースを 1 ファイルの CJS にバンドル
    (Top-level await の解消・`import.meta.url` のシム化はビルドスクリプトが対応)
-2. **exe** (`pnpm run build:exe`) — `@yao-pkg/pkg` が Node ランタイムとバンドル + アセット
-   (`public/`・mermaid・highlight.js テーマ等) を一つの exe にパッケージング
+2. **exe** (`pnpm run build:exe`) — Node ランタイムにアイコンと版情報を入れてから、
+   `@yao-pkg/pkg` がバンドル + アセット (`public/`・mermaid・highlight.js テーマ等) と
+   一つの exe にパッケージング
 3. **patch** (`pnpm run build:patch`) — exe の PE サブシステムを GUI に書き換え、
    ダブルクリック時にコンソール窓が出ないようにする
 
