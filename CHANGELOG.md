@@ -7,6 +7,12 @@
 
 ## [未リリース]
 
+## [1.9.1] - 2026-11-16
+
+### 追加
+- exe にアイコンを付けた。`.md` を関連付けたときのファイルのアイコンにも使われる。アプリのウィンドウ（タイトルバー・タスクバー）にも同じアイコンを出す。
+- exe に版情報を入れた。「プログラムから開く」の一覧などに、Node.js ではなく fastmd-explorer と出る。
+
 ## [1.9.0] - 2026-11-11
 
 ### 追加
@@ -171,7 +177,8 @@
   - 設定パネル・ステータスバー
   - 単一 exe ビルド (@yao-pkg/pkg + esbuild)、pnpm 化
 
-[未リリース]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.9.0...HEAD
+[未リリース]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.9.1...HEAD
+[1.9.1]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.8.2...v1.9.0
 [1.8.2]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.8.1...v1.8.2
 [1.8.1]: https://github.com/lancard-aikawa/fastmd-explorer/compare/v1.8.0...v1.8.1
